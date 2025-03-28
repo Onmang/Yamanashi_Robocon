@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# Arduino
+*.hex
+*.elf
+
+# ログファイル
+*.log
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
