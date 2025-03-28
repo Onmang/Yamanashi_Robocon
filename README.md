@@ -4,9 +4,9 @@
 とりあえず「develop」で作業をする
 
 
-# File: .gitignore
+# [.gitignore]
 プログラムを実行すると自動生成される.logとかを予め排除するもの
 これらは膨大なデータなため、場合によっては一度にgithubにアップできない可能性があります
 
-# Folder: share_lib
+# [share_lib]
 共有の必要があるライブラリ用
