@@ -2,85 +2,94 @@ import cv2
 import numpy as np
 import os
 import ctypes
-import sys
 
-
-def nothing(x):
-    pass
-    
-# コマンドライン引数から画像パスを取得
-if len(sys.argv) < 2:
-    print("画像ファイルを指定してください（例: python hsv_test_code.py images_data/DSC_0197.JPG）")
-    exit()
-
-# どちらの処理を使うか切り替え（True: HSV, False: RGB）
-MODE = True
 
 # 画像パス
-curr_path = os.getcwd()
-img_name = sys.argv[1]
-img_path = os.path.join(curr_path, "images_data", img_name)
-input_image = cv2.imread(img_path)
-if input_image is None:
-    print("画像読み込み失敗：", img_path)
-    exit()
+CURR_PATH = os.getcwd()
+PARAM_PATH = "hsv_params.json"
 
-# ディスプレイ幅取得（Windows）
-user32 = ctypes.windll.user32
-screen_width = user32.GetSystemMetrics(0)
-max_display_width = int(screen_width * 0.95)
+def _noop(x): pass
 
-# リサイズ処理
-base_resize_width = 800
-h, w = input_image.shape[:2]
-resize_ratio = base_resize_width / w
-resized_image = cv2.resize(input_image, (base_resize_width, int(h * resize_ratio)))
+def create_hsv_trackbars(win):
+    cv2.createTrackbar('H_low',  win, 0,   179, _noop)
+    cv2.createTrackbar('H_high', win, 179, 179, _noop)
+    cv2.createTrackbar('S_low',  win, 0,   255, _noop)
+    cv2.createTrackbar('S_high', win, 255, 255, _noop)
+    cv2.createTrackbar('V_low',  win, 0,   255, _noop)
+    cv2.createTrackbar('V_high', win, 255, 255, _noop)
 
-# トラックバー作成（H/S/V でも R/G/B でも共通流用）
-cv2.namedWindow('Control', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('Control', 400, 300)
-cv2.createTrackbar('C1_low', 'Control', 0, 255, nothing)
-cv2.createTrackbar('C1_high', 'Control', 255, 255, nothing)
-cv2.createTrackbar('C2_low', 'Control', 221, 255, nothing)
-cv2.createTrackbar('C2_high', 'Control', 255, 255, nothing)
-cv2.createTrackbar('C3_low', 'Control', 161, 255, nothing)
-cv2.createTrackbar('C3_high', 'Control', 255, 255, nothing)
+def get_hsv_range(win):
+    hl = cv2.getTrackbarPos('H_low',  win)
+    hh = cv2.getTrackbarPos('H_high', win)
+    sl = cv2.getTrackbarPos('S_low',  win)
+    sh = cv2.getTrackbarPos('S_high', win)
+    vl = cv2.getTrackbarPos('V_low',  win)
+    vh = cv2.getTrackbarPos('V_high', win)
+    return (hl, sl, vl), (hh, sh, vh)
 
-while True:
-    # スライダーから値取得してソート（low <= high）
-    c1_low, c1_high = sorted([cv2.getTrackbarPos('C1_low', 'Control'), cv2.getTrackbarPos('C1_high', 'Control')])
-    c2_low, c2_high = sorted([cv2.getTrackbarPos('C2_low', 'Control'), cv2.getTrackbarPos('C2_high', 'Control')])
-    c3_low, c3_high = sorted([cv2.getTrackbarPos('C3_low', 'Control'), cv2.getTrackbarPos('C3_high', 'Control')])
+def save_params(path, lo, hi):
+    data = {'H_low':lo[0],'S_low':lo[1],'V_low':lo[2],
+            'H_high':hi[0],'S_high':hi[1],'V_high':hi[2]}
+    Path(path).write_text(json.dumps(data, indent=2), encoding='utf-8')
+    print(f"Saved HSV params -> {path}")
 
-    if MODE:
-        # HSV変換してマスク作成
-        hsv = cv2.cvtColor(resized_image, cv2.COLOR_BGR2HSV)
-        lower = np.array([c1_low, c2_low, c3_low])
-        upper = np.array([c1_high, c2_high, c3_high])
-        mask = cv2.inRange(hsv, lower, upper)
-    else:
-        # RGBマスク（OpenCVはBGRなので順番注意）
-        lower = np.array([c3_low, c2_low, c1_low])  # BGR順
-        upper = np.array([c3_high, c2_high, c1_high])
-        mask = cv2.inRange(resized_image, lower, upper)
+def load_params_if_exist(win, path):
+    p = Path(path)
+    if not p.exists(): return
+    data = json.loads(p.read_text(encoding='utf-8'))
+    for k, v in data.items():
+        cv2.setTrackbarPos(k, win, int(v))
+    print(f"Loaded HSV params <- {path}")
 
-    # マスク適用
-    masked_image = cv2.bitwise_and(resized_image, resized_image, mask=mask)
-    mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+def main(img_name=""):
 
-    # スケーリング（画面に収める）
-    h_disp, w_disp = resized_image.shape[:2]
-    combined_width = w_disp * 3
-    scale = min(1.0, max_display_width / combined_width)
+    # image path
+    img_path = os.path.join(CURR_PATH, "yolo", "datasets", "images_val", img_name)
+    input_image = cv2.imread(img_path)
 
-    img1 = cv2.resize(resized_image, None, fx=scale, fy=scale)
-    img2 = cv2.resize(masked_image, None, fx=scale, fy=scale)
-    img3 = cv2.resize(mask_bgr, None, fx=scale, fy=scale)
+    # 画面
+    cv2.namedWindow('Input', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('Mask', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('HSV Control', cv2.WINDOW_NORMAL)
+    create_hsv_trackbars('HSV Control')
+    load_params_if_exist('HSV Control', PARAM_PATH)
 
-    combined = np.hstack((img1, img2, img3))
-    cv2.imshow('HSV/RGB Filter [Input | Masked | Binary]', combined)
+    print("操作: s=パラメータ保存, q/ESC=終了")
 
-    if cv2.waitKey(1) & 0xFF == 27:
-        break
+    try:
+        while True:
 
-cv2.destroyAllWindows()
+            bgr = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
+
+            # 低ノイズ化したいときは有効化
+            # bgr = cv2.GaussianBlur(bgr, (5,5), 0)
+
+            hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+            lo, hi = get_hsv_range('HSV Control')
+            mask = cv2.inRange(hsv, np.array(lo, np.uint8), np.array(hi, np.uint8))
+
+            # 膨張・収縮でマスク整形（任意）
+            # kernel = np.ones((3,3), np.uint8)
+            # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            # mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+            # 可視化（マスクをカラーに適用）
+            vis = cv2.bitwise_and(bgr, bgr, mask=mask)
+
+            cv2.imshow('Input', bgr)
+            cv2.imshow('Mask', vis)
+
+            k = cv2.waitKey(1) & 0xFF
+            if k in (27, ord('q')):
+                break
+            elif k == ord('s'):
+                save_params(PARAM_PATH, lo, hi)
+
+    finally:
+        pipeline.stop()
+        cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    image_name = "image_26.jpg"  # ここにテストしたい画像のファイル名を入れる
+    main(image_name)
+
