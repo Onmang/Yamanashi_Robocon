@@ -1,0 +1,88 @@
+# Yamanashi_Robocon
+
+このリポジトリは山梨大学ロボコンチームの開発用リポジトリです。  
+ブランチ運用方針: `develop` を開発のメインブランチ、`main` を安定版とします。
+
+---
+
+## Git 操作まとめ
+
+### 今回の流れ
+1. ファイルをステージに追加  
+   ```bash
+   git add nguyen/
+   ```
+
+2. コミットを作成  
+   ```bash
+   git commit -m "first commit"
+   ```
+
+3. ブランチ名を `main` に変更  
+   ```bash
+   git branch -M main
+   ```
+
+4. リモートリポジトリを確認  
+   ```bash
+   git remote -v
+   ```
+
+5. リモートの内容を取得  
+   ```bash
+   git fetch origin
+   ```
+
+6. リモートの `develop` ブランチをローカルに作成＆チェックアウト  
+   ```bash
+   git checkout -B develop origin/develop
+   ```
+
+7. `main` ブランチの変更を `develop` に統合  
+   ```bash
+   git merge main
+   ```
+
+8. `develop` を GitHub にプッシュ  
+   ```bash
+   git push -u origin develop
+   ```
+
+---
+
+### ブランチ操作の基本
+- 既存ブランチに切り替え  
+  ```bash
+  git checkout develop
+  ```
+
+- 新しいブランチを作って切り替え  
+  ```bash
+  git checkout -b feature/new-function
+  ```
+
+- リモートのブランチをローカルに作る  
+  ```bash
+  git checkout -b feature/recognition origin/feature/recognition
+  ```
+
+---
+
+### 今後の開発フロー
+1. 作業ブランチを作成  
+   ```bash
+   git checkout -b feature/my_work develop
+   ```
+
+2. コードを編集 → add → commit  
+   ```bash
+   git add .
+   git commit -m "implement my work"
+   ```
+
+3. リモートにプッシュ  
+   ```bash
+   git push -u origin feature/my_work
+   ```
+
+4. GitHub 上で Pull Request を作り、`develop` にマージ
