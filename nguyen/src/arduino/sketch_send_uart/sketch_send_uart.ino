@@ -10,7 +10,7 @@ void loop() {
   // delay(2000);
 
   // Raspberry Piからのデータを受信して表示
-  if (Serial.available() > 0) {
+  if (Serial.available() > 0) {                           
     String receivedData = Serial.readStringUntil('\n');
     receivedData.trim(); // remove CR/LF and spaces
     Serial.print("Received Data: ");

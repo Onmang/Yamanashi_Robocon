@@ -13,15 +13,18 @@ import time
 
 # パラメータ保存用のファイルパス
 PARAM_PATH_DIS = "distance_params.json"
-PARAM_PATH_HSV = "hsv_params.json"
+PARAM_PATH_HSV = ["hsv_params_red.json", "hsv_params_yellow.json", "hsv_params_blue.json", "hsv_params_flag.json"] # 保存先パス選択
 
 
 # ls -l /dev/ | grep tty
 # Arduinoが接続されているシリアルポートとボーレートを設定
-# serial_port = '/dev/ttyACM0'
-serial_port = '/dev/ttyUSB0'
+# serial_port = '/dev/ttyACM0'        # arduino UNO
+# serial_port = '/dev/ttyUSB0'      # nakano arduino mega
+serial_port = '/dev/ttyACM0'        # takemichi arduino nano evry
 
-baud_rate = 115200
+ARDUINO = False
+
+baud_rate = 9600   # 9600, 115200
 ser = None
 
 
@@ -90,7 +93,7 @@ def show_hist(img_hsv):
     plt.legend()
     plt.show()
 
-def main():
+def main(hsv_param_num=0):
     pipeline = rs.pipeline()
     cfg = rs.config()
 
@@ -141,7 +144,7 @@ def main():
     create_distance_trackbars('Distance Control')
     load_params_if_exist('Distance Control', PARAM_PATH_DIS)
     create_hsv_trackbars('HSV Control')
-    load_params_if_exist('HSV Control', PARAM_PATH_HSV)
+    load_params_if_exist('HSV Control', PARAM_PATH_HSV[hsv_param_num])
 
     # ウィンドウが重ならないように初期位置を設定
     win_w, win_h = 450, 400  # ウィンドウサイズを小さく調整
@@ -161,11 +164,13 @@ def main():
 
     # arduino　送信設定
     # シリアルポートを開く
-    ser = serial.Serial(serial_port, baud_rate)
-    print("Serial Port was opened: " + serial_port)
-    mode = 1
-    angle = 0
-    dis = 0
+    if ARDUINO:
+        global ser
+        ser = serial.Serial(serial_port, baud_rate)
+        print("Serial Port was opened: " + serial_port)
+        mode = 1
+        angle = 0
+        dis = 0
 
     try:
         while True:
@@ -203,18 +208,20 @@ def main():
             dist_text = f"Center Distance: {center_dist_m:.3f} [m] ({center_dist_m*1000:.0f} [mm])"
 
             # center_dist_m を dis（mm, 整数）に格納してArduinoへ送信
-            dis_mm = int(center_dist_m * 1000) if center_dist_m > 0 else 0
-            dis = dis_mm % 10000  # 0..9999 に収める
+            if (ARDUINO):
+                dis_mm = int(center_dist_m * 1000) if center_dist_m > 0 else 0
+                dis = dis_mm % 10000  # 0..9999 に収める
 
-            # Format with zero-padding to fixed widths so Arduino can parse consistently
-            angle = angle % 1000       # 0..999
-            msg = f"{mode}{angle:03d}{dis:04d}\n"
+                # Format with zero-padding to fixed widths so Arduino can parse consistently
+                angle = angle % 1000       # 0..999
+                msg = f"{mode}{angle:03d}{dis:04d}\n"
 
-            try:
-                ser.write(msg.encode('ascii'))
-                print(f"Sent: {msg.strip()}")
-            except Exception as e:
-                print("Failed to write to serial: " + str(e))
+                try:
+                    ser.write(msg.encode('ascii'))
+                    time.sleep(1)
+                    print(f"Sent: {msg.strip()}")
+                except Exception as e:
+                    print("Failed to write to serial: " + str(e))
             
             cv2.putText(color_image, dist_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             cv2.drawMarker(color_image, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
@@ -293,12 +300,12 @@ def main():
                 break
             elif k == ord('s'):
                 save_params_dis(PARAM_PATH_DIS, dist_min_cm, dist_max_cm)
-                save_params_hsv(PARAM_PATH_HSV, lo, hi)
+                save_params_hsv(PARAM_PATH_HSV[hsv_param_num], lo, hi)
 
     finally:
         pipeline.stop()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    main(1)  # 0:赤, 1:黄, 2:青
 
