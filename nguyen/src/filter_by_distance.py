@@ -51,8 +51,22 @@ def main():
     cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16, FPS)
     cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
 
+    # ストリーミング開始
     profile = pipeline.start(cfg)
+    
+    # 内部パラメータの行列
+    intr = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+    inst_matrix = np.array([[intr.fx, 0, intr.ppx],
+                            [0, intr.fy, intr.ppy],
+                            [0, 0, 1]])
+    print(f"Camera Intrinsics: {intr.width}x{intr.height}")
+    print("Intrinsic Matrix:")
+    print("[[fx, 0, ppx],")
+    print(f" [0, fy, ppy],")
+    print(f" [0, 0, 1]]")
+    print(inst_matrix)
 
+    # 深度センサーの情報を取得
     depth_sensor = profile.get_device().first_depth_sensor()
     
     # 深度センサーからdepth_scaleを取得（単位をメートルに変換する係数）
@@ -83,9 +97,13 @@ def main():
 
     try:
         while True:
+            # Get frameset of color and depth
             frames = pipeline.wait_for_frames()
 
+            # Align the depth frame to color frame
             aligned_frames = align.process(frames)
+
+            # Get aligned frames
             depth_frame = aligned_frames.get_depth_frame()
             color_frame = aligned_frames.get_color_frame()
 
@@ -101,7 +119,10 @@ def main():
             x1, x2 = cx - roi_size // 2, cx + roi_size // 2
             y1, y2 = cy - roi_size // 2, cy + roi_size // 2
             
+            # 中心領域
             center_roi = depth_image[y1:y2, x1:x2]
+
+            # 0を除く平均値を計算
             non_zero_values = center_roi[center_roi > 0]
             avg_dist_raw = np.mean(non_zero_values) if non_zero_values.size > 0 else 0
             

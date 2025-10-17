@@ -43,6 +43,83 @@ def load_params_if_exist(win, path):
         cv2.setTrackbarPos(k, win, int(v))
     print(f"Loaded HSV params <- {path}")
 
+def make_mask_hsv_with_wrap(hsv, lo, hi):
+    """Hueが0/179を跨ぐ場合に対応したinRange。lo=(H,S,V), hi=(H,S,V)"""
+    hl, sl, vl = lo
+    hh, sh, vh = hi
+    # S,Vの範囲マスク（共通）
+    sv_low  = np.array([0,  sl, vl], dtype=np.uint8)
+    sv_high = np.array([179, sh, vh], dtype=np.uint8)
+
+    if hl <= hh:
+        # 通常（跨がない）
+        rng_low  = np.array([hl, sl, vl], dtype=np.uint8)
+        rng_high = np.array([hh, sh, vh], dtype=np.uint8)
+        mask = cv2.inRange(hsv, rng_low, rng_high)
+    else:
+        # 跨ぐ（例：hl=170, hh=10 → [170..179] ∪ [0..10]）
+        rng_low1  = np.array([hl,  sl, vl], dtype=np.uint8)
+        rng_high1 = np.array([179, sh, vh], dtype=np.uint8)
+        rng_low2  = np.array([0,   sl, vl], dtype=np.uint8)
+        rng_high2 = np.array([hh,  sh, vh], dtype=np.uint8)
+        mask = cv2.inRange(hsv, rng_low1, rng_high1) | cv2.inRange(hsv, rng_low2, rng_high2)
+
+    # 念のためS,Vだけで外れるのを抑える（Hue無視のSVマスクとAND）
+    sv_mask = cv2.inRange(hsv, sv_low, sv_high)
+    return mask & sv_mask
+
+def draw_hsv_hist_cv(hsv):
+    """MatplotlibなしでHSVヒストグラム画像(横600x縦220)を作って返す（軸ラベル付き）"""
+    h, s, v = hsv[:,:,0], hsv[:,:,1], hsv[:,:,2]
+    hist_h = cv2.calcHist([h],[0],None,[180],[0,180])  # Hueは0..179
+    hist_s = cv2.calcHist([s],[0],None,[256],[0,256])
+    hist_v = cv2.calcHist([v],[0],None,[256],[0,256])
+
+    # 正規化
+    hist_h = cv2.normalize(hist_h, None, 0, 180, cv2.NORM_MINMAX).flatten()
+    hist_s = cv2.normalize(hist_s, None, 0, 180, cv2.NORM_MINMAX).flatten()
+    hist_v = cv2.normalize(hist_v, None, 0, 180, cv2.NORM_MINMAX).flatten()
+
+    W, Himg = 600, 220
+    margin_bottom = 20
+    img = np.zeros((Himg, W, 3), dtype=np.uint8)
+
+    # 軸スケール用関数
+    def plot_poly(hist, color, bins, xscale):
+        pts = []
+        for i in range(bins):
+            x = int(i * xscale)
+            y = Himg - margin_bottom - int(hist[i])
+            pts.append([x, y])
+        pts = np.array(pts, dtype=np.int32)
+        cv2.polylines(img, [pts], isClosed=False, color=color, thickness=1)
+
+    plot_poly(hist_h, (0,0,255),   180, W/180)  # H: 赤
+    plot_poly(hist_s, (0,255,0),   256, W/256)  # S: 緑
+    plot_poly(hist_v, (255,255,255),256, W/256) # V: 白
+
+    # --- 軸描画 ---
+    y_base = Himg - margin_bottom
+    cv2.line(img, (0, y_base), (W, y_base), (200,200,200), 1)  # x軸
+    cv2.line(img, (0, y_base-180), (0, y_base), (200,200,200), 1)  # y軸
+
+    # 横軸目盛（Hue/S/Vの基準）
+    tick_step = 30  # Hueの目盛間隔
+    for val in range(0, 181, tick_step):
+        x = int(val * (W/180))
+        cv2.line(img, (x, y_base-5), (x, y_base+3), (150,150,150), 1)
+        cv2.putText(img, str(val), (x-10, y_base+15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200,200,200), 1, cv2.LINE_AA)
+
+    # 縦軸目盛（凡例）
+    for i, t in enumerate(["H(0-179)", "S(0-255)", "V(0-255)"]):
+        cv2.putText(img, t, (10 + 80*i, 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    
+                    [(0,0,255), (0,255,0), (255,255,255)][i], 1, cv2.LINE_AA)
+
+    return img
+
 def main():
     pipeline = rs.pipeline()
     cfg = rs.config()
@@ -65,10 +142,24 @@ def main():
     cv2.namedWindow('Input', cv2.WINDOW_NORMAL)
     cv2.namedWindow('Mask', cv2.WINDOW_NORMAL)
     cv2.namedWindow('HSV Control', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('Result', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('Mask Morph', cv2.WINDOW_NORMAL)
+    # ヒストグラムは必要時のみ開く
+    show_hist = False
+
     create_hsv_trackbars('HSV Control')
     load_params_if_exist('HSV Control', PARAM_PATH)
 
-    print("操作: s=パラメータ保存, q/ESC=終了")
+    # ウィンドウ配置
+    win_w, win_h = 450, 400
+    offset_x, offset_y = 50, 50
+    cv2.moveWindow('Input', offset_x, offset_y)
+    cv2.moveWindow('Mask', win_w + offset_x, offset_y)
+    cv2.moveWindow('Mask Morph', 2 * win_w + offset_x, offset_y)
+    cv2.moveWindow('Result', offset_x, win_h + offset_y)
+    cv2.moveWindow('HSV Control', win_w + offset_x, win_h + offset_y)
+
+    print("操作: s=パラメータ保存, h=ヒスト表示ON/OFF, q/ESC=終了")
 
     try:
         while True:
@@ -86,29 +177,42 @@ def main():
                 ir = np.asanyarray(ir_frame.get_data())  # (H, W) uint8
                 bgr = cv2.cvtColor(ir, cv2.COLOR_GRAY2BGR)
 
-            # 低ノイズ化したいときは有効化
-            # bgr = cv2.GaussianBlur(bgr, (5,5), 0)
+            # 低ノイズ化（任意）
+            bgr = cv2.GaussianBlur(bgr, (5,5), 0)
 
             hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
             lo, hi = get_hsv_range('HSV Control')
-            mask = cv2.inRange(hsv, np.array(lo, np.uint8), np.array(hi, np.uint8))
+
+            # Hueラップ対応マスク
+            mask = make_mask_hsv_with_wrap(hsv, lo, hi)
 
             # 膨張・収縮でマスク整形（任意）
-            # kernel = np.ones((3,3), np.uint8)
-            # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-            # mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+            kernel = np.ones((3,3), np.uint8)
+            mask_morph = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=3)
+            mask_morph = cv2.morphologyEx(mask_morph, cv2.MORPH_CLOSE, kernel, iterations=3)
 
             # 可視化（マスクをカラーに適用）
-            vis = cv2.bitwise_and(bgr, bgr, mask=mask)
+            vis = cv2.bitwise_and(bgr, bgr, mask=mask_morph)
 
             cv2.imshow('Input', bgr)
-            cv2.imshow('Mask', vis)
+            cv2.imshow('Result', vis)
+            cv2.imshow('Mask', mask)
+            cv2.imshow('Mask Morph', mask_morph)
+
+            if show_hist:
+                hist_img = draw_hsv_hist_cv(hsv)
+                cv2.imshow('Hist', hist_img)
+            else:
+                # 表示OFF時は開いていれば閉じる
+                cv2.destroyWindow('Hist')
 
             k = cv2.waitKey(1) & 0xFF
             if k in (27, ord('q')):
                 break
             elif k == ord('s'):
                 save_params(PARAM_PATH, lo, hi)
+            elif k == ord('h'):
+                show_hist = not show_hist
 
     finally:
         pipeline.stop()
