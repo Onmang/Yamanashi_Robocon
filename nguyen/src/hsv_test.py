@@ -8,7 +8,7 @@ import pyrealsense2 as rs
 import json
 from pathlib import Path
 
-PARAM_PATH = "hsv_params.json"
+PARAM_PATH = ["hsv_params_red.json", "hsv_params_yellow.json", "hsv_params_blue.json", "hsv_params_flag.json"] # 保存先パス選択
 
 def _noop(x): pass
 
@@ -120,7 +120,7 @@ def draw_hsv_hist_cv(hsv):
 
     return img
 
-def main():
+def main(hsv_param_num=0):
     pipeline = rs.pipeline()
     cfg = rs.config()
 
@@ -148,7 +148,7 @@ def main():
     show_hist = False
 
     create_hsv_trackbars('HSV Control')
-    load_params_if_exist('HSV Control', PARAM_PATH)
+    load_params_if_exist('HSV Control', PARAM_PATH[hsv_param_num])
 
     # ウィンドウ配置
     win_w, win_h = 450, 400
@@ -194,6 +194,49 @@ def main():
             # 可視化（マスクをカラーに適用）
             vis = cv2.bitwise_and(bgr, bgr, mask=mask_morph)
 
+            # 輪郭抽出
+            contours, _ = cv2.findContours(mask_morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(vis, contours, -1, (0,255,0), 2)
+
+            # 面積
+            # for cnt in contours:
+            #     area = cv2.contourArea(cnt)
+            #     if area < 500:  # 小さいノイズは無視
+            #         continue
+            #     x, y, w, h = cv2.boundingRect(cnt)
+            #     cv2.rectangle(vis, (x,y), (x+w, y+h), (255,0,0), 2)
+            #     cv2.putText(vis, f"{area:.0f}", (x, y-10),
+            #                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,0), 2)
+
+            approx_contours = []
+            for i, cnt in enumerate(contours):
+                # 輪郭の周囲の長さを計算する。
+                arclen = cv2.arcLength(cnt, True)
+                # 輪郭を近似する。
+                approx_cnt = cv2.approxPolyDP(cnt, epsilon=0.1 * arclen, closed=True)
+                approx_contours.append(approx_cnt)
+            # 三角形を探す
+            triangles = list(filter(lambda x: len(x) == 3, approx_contours))
+            cv2.drawContours(vis, triangles, -1, (0,0,255), 2)  # 赤で描画
+
+            # 三角形の面積
+            for tri in triangles:
+                area = cv2.contourArea(tri)
+                if area < 500:
+                    continue
+                x, y, w, h = cv2.boundingRect(tri)
+                cv2.putText(vis, f"Tri:{area:.0f}", (x, y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+
+            # 三角形の中心座標
+            for tri in triangles:
+                M = cv2.moments(tri)
+                if M['m00'] == 0:
+                    continue
+                cx = int(M['m10'] / M['m00'])
+                cy = int(M['m01'] / M['m00'])
+                cv2.circle(vis, (cx, cy), 5, (0,255,0), -1)  # 緑の点で表示
+
             cv2.imshow('Input', bgr)
             cv2.imshow('Result', vis)
             cv2.imshow('Mask', mask)
@@ -210,7 +253,7 @@ def main():
             if k in (27, ord('q')):
                 break
             elif k == ord('s'):
-                save_params(PARAM_PATH, lo, hi)
+                save_params(PARAM_PATH[hsv_param_num], lo, hi)
             elif k == ord('h'):
                 show_hist = not show_hist
 
@@ -219,4 +262,4 @@ def main():
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    main(hsv_param_num=0)  # 0:赤, 1:緑, 2:青
