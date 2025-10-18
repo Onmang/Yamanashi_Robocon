@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # 認識バージョン１
+# パラメータ関係はd435iベースにやっている
 
 
 import cv2
@@ -10,25 +11,77 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import serial
 import time
+import sys
+
+from common_function import create_homogeneous_matrix, project_center_to_robot, CameraParam
 
 # パラメータ保存用のファイルパス
 PARAM_PATH_DIS = "distance_params.json"
 PARAM_PATH_HSV = ["hsv_params_red.json", "hsv_params_yellow.json", "hsv_params_blue.json", "hsv_params_flag.json"] # 保存先パス選択
+PARAM_HOUGH = "houghcircles_params.json"
+PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先
+
+# --- 円形度ベースの円検出（Contours + Circularity） ---
+# 円形度 C = 4πA / P^2 （A: 面積, P: 周長）
+# 目安: 完全な円で 1.0、楕円/いびつ形で低下。0.80〜0.90 くらいが実用。
+CIRC_MIN = 0.80
+AREA_MIN = 100       # 小ノイズ除去
+AREA_MAX = 10000     # 大きすぎる塊を除外（必要に応じ調整）
 
 
-# ls -l /dev/ | grep tty
-# Arduinoが接続されているシリアルポートとボーレートを設定
-# serial_port = '/dev/ttyACM0'        # arduino UNO
-# serial_port = '/dev/ttyUSB0'      # nakano arduino mega
-serial_port = '/dev/ttyACM0'        # takemichi arduino nano evry
-
+# Arduino接続設定
 ARDUINO = False
-
-baud_rate = 9600   # 9600, 115200
-ser = None
-
+if ARDUINO:
+    # ls -l /dev/ | grep tty
+    # Arduinoが接続されているシリアルポートとボーレートを設定
+    # serial_port = '/dev/ttyACM0'        # arduino UNO
+    # serial_port = '/dev/ttyUSB0'      # nakano arduino mega
+    serial_port = '/dev/ttyACM0'        # takemichi arduino nano evry
+    baud_rate = 9600   # 9600, 115200
+    ser = None
 
 def _noop(x): pass
+
+def create_noise_trackbars(win):
+    # 0: None, 1: Median, 2: Gaussian
+    cv2.createTrackbar("filter_type (0:none 1:median 2:gauss)", win, 2, 2, _noop)
+    cv2.createTrackbar("ksize (odd)", win, 3, 10, _noop)  # 実効は 2*val+1 → 5,7,...
+    cv2.createTrackbar("sigmaX (gauss)", win, 0, 50, _noop)  # 0なら自動
+
+def get_noise_params(win):
+    ftype = cv2.getTrackbarPos("filter_type (0:none 1:median 2:gauss)", win)
+    ksize_raw = cv2.getTrackbarPos("ksize (odd)", win)
+    k = max(3, 2 * ksize_raw + 1)  # 3,5,7,9,...（最低3）
+    sigmaX = cv2.getTrackbarPos("sigmaX (gauss)", win)
+    return ftype, k, sigmaX
+
+def save_noise_params(path, ftype, k, sigmaX):
+    """パラメータをJSONファイルに保存する"""
+    data = {'filter_type': ftype, 'ksize': k, 'sigmaX': sigmaX}
+    Path(path).write_text(json.dumps(data, indent=2), encoding='utf-8')
+    print(f"Saved Filter params -> {path}")
+
+def create_houghcircles_trackbars(win):
+    cv2.createTrackbar('minDist', win, 50, 500, _noop)
+    cv2.createTrackbar('param1', win, 100, 300, _noop)
+    cv2.createTrackbar('param2', win, 30, 150, _noop)
+    cv2.createTrackbar('minRadius', win, 10, 100, _noop)
+    cv2.createTrackbar('maxRadius', win, 100, 200, _noop)
+
+def get_houghcircles_params(win):
+    minDist   = cv2.getTrackbarPos('minDist', win)
+    param1    = cv2.getTrackbarPos('param1', win)
+    param2    = cv2.getTrackbarPos('param2', win)
+    minRadius = cv2.getTrackbarPos('minRadius', win)
+    maxRadius = cv2.getTrackbarPos('maxRadius', win)
+    return minDist, param1, param2, minRadius, maxRadius
+
+def save_params_hough(path, minDist, param1, param2, minRadius, maxRadius):
+    """パラメータをJSONファイルに保存する"""
+    data = {'minDist': minDist, 'param1': param1, 'param2': param2,
+            'minRadius': minRadius,  'maxRadius': maxRadius}
+    Path(path).write_text(json.dumps(data, indent=2), encoding='utf-8')
+    print(f"Saved HoughCircles params -> {path}")
 
 def create_hsv_trackbars(win):
     cv2.createTrackbar('H_low',  win, 0,   179, _noop)
@@ -47,7 +100,7 @@ def get_hsv_range(win):
     vh = cv2.getTrackbarPos('V_high', win)
     return (hl, sl, vl), (hh, sh, vh)
 
-def create_distance_trackbars(win, max_dist_cm=200):
+def create_distance_trackbars(win, max_dist_cm=400):
     """距離[cm]を調整するトラックバーを作成する"""
     # D405を想定した初期値 (7cm - 50cm)
     cv2.createTrackbar('Dist_min [cm]', win, 7,  max_dist_cm, _noop)
@@ -93,7 +146,27 @@ def show_hist(img_hsv):
     plt.legend()
     plt.show()
 
-def main(hsv_param_num=0):
+def main():
+
+    # argv
+    args = sys.argv
+    if len(args) < 2:
+        print("============ Error =============================================")
+        print("Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue]")
+        print("================================================================")
+        return
+    hsv_param_num = int(args[1])
+
+    # 同時変換行列
+    deg = np.deg2rad  # ← 関数オブジェクトを代入
+    T_cam2rob = create_homogeneous_matrix(
+    tx=0, ty=0, tz=0.011,
+    rx=deg(-90), ry=deg(0), rz=deg(0)
+    )
+
+    # カメラクラス
+    rs_d435i = CameraParam()
+
     pipeline = rs.pipeline()
     cfg = rs.config()
 
@@ -109,10 +182,13 @@ def main(hsv_param_num=0):
     
     # 内部パラメータの行列
     intr = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
-    inst_matrix = np.array([[intr.fx, 0, intr.ppx],
-                            [0, intr.fy, intr.ppy],
+    # クラス格納
+    rs_d435i.intr = intr
+    rs_d435i.add_ins_param(intr)
+    inst_matrix = np.array([[rs_d435i.fx, 0, rs_d435i.ppx],
+                            [0, rs_d435i.fy, rs_d435i.ppy],
                             [0, 0, 1]])
-    print(f"Camera Intrinsics: {intr.width}x{intr.height}")
+    print(f"Camera Intrinsics: {rs_d435i.intr.width}x{rs_d435i.intr.height}")
     print("Intrinsic Matrix:")
     print("[[fx, 0, ppx],")
     print(f" [0, fy, ppy],")
@@ -123,8 +199,8 @@ def main(hsv_param_num=0):
     depth_sensor = profile.get_device().first_depth_sensor()
     
     # 深度センサーからdepth_scaleを取得（単位をメートルに変換する係数）
-    depth_scale = depth_sensor.get_depth_scale()
-    print(f"Depth Scale is: {depth_scale}")
+    rs_d435i.depth_scale = depth_sensor.get_depth_scale()
+    print(f"Depth Scale is: {rs_d435i.depth_scale}")
 
     # 深度とカラーの位置合わせ（Align）オブジェクトを作成
     align_to = rs.stream.color
@@ -139,17 +215,24 @@ def main(hsv_param_num=0):
     cv2.namedWindow('HSV Mask', cv2.WINDOW_NORMAL)
     cv2.namedWindow('HSV Mask Morph', cv2.WINDOW_NORMAL)
     cv2.namedWindow('Result', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('HoughCircles Control', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('Filter GUI', cv2.WINDOW_NORMAL)
 
     # トラックバーを作成
     create_distance_trackbars('Distance Control')
     load_params_if_exist('Distance Control', PARAM_PATH_DIS)
     create_hsv_trackbars('HSV Control')
     load_params_if_exist('HSV Control', PARAM_PATH_HSV[hsv_param_num])
+    create_houghcircles_trackbars('HoughCircles Control')
+    load_params_if_exist('HoughCircles Control', PARAM_HOUGH)
+    create_noise_trackbars('Filter GUI')
+    load_params_if_exist('Filter GUI', PARAM_FILTER)
+
 
     # ウィンドウが重ならないように初期位置を設定
-    win_w, win_h = 450, 400  # ウィンドウサイズを小さく調整
+    win_w, win_h = 450, 350  # ウィンドウサイズを小さく調整
     offset_x = 50
-    offset_y = 45
+    offset_y = 50
     cv2.moveWindow('Input', offset_x, offset_y)
     cv2.moveWindow('Depth Filter', win_w + offset_x, offset_y)
     cv2.moveWindow('Depth', 2 * win_w + offset_x, offset_y)
@@ -159,6 +242,8 @@ def main(hsv_param_num=0):
 
     cv2.moveWindow('Distance Control', 3 * win_w + offset_x, offset_y)
     cv2.moveWindow('HSV Control', 3 * win_w + offset_x, win_h + offset_y)
+    cv2.moveWindow('HoughCircles Control', 3 * win_w + offset_x, 2 * win_h + offset_y)
+    cv2.moveWindow('Filter GUI', 2 * win_w + offset_x, 2 * win_h + offset_y)
 
     print("[Operation]: s->Save params, q/ESC->Exit")
 
@@ -204,7 +289,7 @@ def main(hsv_param_num=0):
             avg_dist_raw = np.mean(non_zero_values) if non_zero_values.size > 0 else 0
             
             # 正しいdepth_scaleを使ってメートル[m]に変換
-            center_dist_m = avg_dist_raw * depth_scale
+            center_dist_m = avg_dist_raw * rs_d435i.depth_scale
             dist_text = f"Center Distance: {center_dist_m:.3f} [m] ({center_dist_m*1000:.0f} [mm])"
 
             # center_dist_m を dis（mm, 整数）に格納してArduinoへ送信
@@ -223,8 +308,10 @@ def main(hsv_param_num=0):
                 except Exception as e:
                     print("Failed to write to serial: " + str(e))
             
-            cv2.putText(color_image, dist_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            cv2.drawMarker(color_image, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
+            # オリジナルに載せない
+            overlay = color_image.copy()
+            cv2.putText(overlay, dist_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.drawMarker(overlay, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
 
             # トラックバーから距離の範囲を[cm]で取得
             dist_min_cm, dist_max_cm = get_distance_range('Distance Control')
@@ -236,8 +323,8 @@ def main(hsv_param_num=0):
                 cv2.setTrackbarPos('Dist_max [cm]', 'Distance Control', dist_max_cm)
 
             # 距離[cm]を、正しいdepth_scaleを使ってraw深度値に変換
-            dist_min_raw = (dist_min_cm / 100.0) / depth_scale
-            dist_max_raw = (dist_max_cm / 100.0) / depth_scale
+            dist_min_raw = (dist_min_cm / 100.0) / rs_d435i.depth_scale
+            dist_max_raw = (dist_max_cm / 100.0) / rs_d435i.depth_scale
 
             # 指定範囲内のマスクを作成
             mask = cv2.inRange(depth_image, int(dist_min_raw), int(dist_max_raw))
@@ -249,7 +336,14 @@ def main(hsv_param_num=0):
             depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
 
             # 低ノイズ化したいときは有効化
-            filtered_image = cv2.GaussianBlur(filtered_image, (5,5), 0)
+            # 低ノイズ化：GUIの選択で適用
+            ftype, k, sigmaX = get_noise_params('Filter GUI')
+            if ftype == 1:
+                filtered_image = cv2.medianBlur(filtered_image, k)
+            elif ftype == 2:
+                filtered_image = cv2.GaussianBlur(filtered_image, (k, k), sigmaX if sigmaX > 0 else 0)
+            # ftype == 0 は何もしない
+
 
             # HSV変換して色抽出
             hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
@@ -264,10 +358,67 @@ def main(hsv_param_num=0):
             # 可視化（マスクをカラーに適用）
             vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph)
 
-            # ハフ変換、円
+            # グレースケール変換
             gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
-            circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp=1, minDist=50,
-                                       param1=100, param2=30, minRadius=10, maxRadius=100)
+
+            # ラベリング処理    
+            retval, labels, stats, centroids = cv2.connectedComponentsWithStats(gray)
+            mask_morph_copy = cv2.cvtColor(mask_morph, cv2.COLOR_GRAY2BGR)
+            for i in range(1, retval):  # 0は背景なのでスキップ
+                x, y, w, h, area = stats[i]
+                cx, cy = int(centroids[i][0]), int(centroids[i][1])
+                if area >= 100 and area < 6000:  # 面積が小さいノイズを除去
+                    cv2.rectangle(mask_morph_copy, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                    cv2.circle(mask_morph_copy, (cx, cy), 3, (0, 255, 255), -1)
+                    # # 中心座標のdepthデータ取得
+                    # if 0 <= cy < depth_image.shape[0] and 0 <= cx < depth_image.shape[1]:
+                    #     depth_value = depth_image[cy, cx]
+                    #     depth_m = depth_value * depth_scale
+                    #     depth_text = f"{depth_m:.3f}m"
+                    # else:
+                    #     depth_text = "Depth: N/A"
+                    # # 中心座標とdepthを表示
+                    # cv2.putText(mask_morph_copy, depth_text, (cx + 5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+                    cv2.putText(mask_morph_copy, f"[{i}]:{area}", (cx + 25, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+
+            if False:
+                # 2値マスクから輪郭抽出, 円を作る
+                contours, _ = cv2.findContours(mask_morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                for cnt in contours:
+                    area = cv2.contourArea(cnt)
+                    if area < AREA_MIN or area > AREA_MAX:
+                        continue
+
+                    peri = cv2.arcLength(cnt, True)
+                    if peri <= 0:
+                        continue
+
+                    circularity = (4.0 * np.pi * area) / (peri * peri)
+                    if circularity < CIRC_MIN:
+                        continue
+
+                    # 円近似：最小外接円（高速で安定）
+                    (cx_f, cy_f), r_f = cv2.minEnclosingCircle(cnt)
+                    cx, cy, r = int(cx_f), int(cy_f), int(r_f)
+
+                    # 深度表示（任意）
+                    if 0 <= cy < depth_image.shape[0] and 0 <= cx < depth_image.shape[1]:
+                        depth_m = depth_image[cy, cx] * rs_d435i.depth_scale
+                        depth_text = f"{depth_m:.3f}m"
+                    else:
+                        depth_text = "Depth: N/A"
+
+                    # 可視化：マゼンタ円＋シアン中心（Hough=緑と区別）
+                    cv2.circle(vis, (cx, cy), r, (255, 0, 255), 2)      # magenta
+                    cv2.circle(vis, (cx, cy), 2, (255, 255, 0), 3)      # cyan
+                    cv2.putText(vis, f"C:{circularity:.2f}", (cx + 30, cy + 70),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2, cv2.LINE_AA)
+                    cv2.putText(vis, depth_text, (cx + 30, cy + 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2, cv2.LINE_AA)
+
+            # ハフ変換、円
+            minDist, param1, param2, minRadius, maxRadius = get_houghcircles_params('HoughCircles Control')
+            circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp=1, minDist=minDist, param1=param1, param2=param2, minRadius=minRadius, maxRadius=maxRadius)
             if circles is not None:
                 circles = np.uint16(np.around(circles)) 
                 for i in circles[0, :]:
@@ -279,33 +430,55 @@ def main(hsv_param_num=0):
                     x, y = int(i[0]), int(i[1])
                     if 0 <= y < depth_image.shape[0] and 0 <= x < depth_image.shape[1]:
                         depth_value = depth_image[y, x]
-                        depth_m = depth_value * depth_scale
+                        depth_m = depth_value * rs_d435i.depth_scale
                         depth_text = f"{depth_m:.3f}m"
+
+                    # ここで カメラ3D→ロボ座標 に変換（project_center_to_robot を使用）
+                    cam3d, rob3d = project_center_to_robot(
+                        u=x, v=y,
+                        depth_image=depth_image,
+                        depth_scale=rs_d435i.depth_scale,
+                        intr=rs_d435i.intr,
+                        T_cam2rob=T_cam2rob,
+                        roi=7  # 2m想定で少し広めに中央値を取る
+                    )
+                    if cam3d is not None:
+                        Xc, Yc, Zc = cam3d
+                        Xr, Yr, Zr = rob3d
+                        # 読みやすいように別色で座標を表示
+                        cv2.putText(vis, f"Cam[{Xc:.3f},{Yc:.3f},{Zc:.3f}]m",
+                                    (x - 100, y + 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                        cv2.putText(vis, f"Rob[{Xr:.3f},{Yr:.3f},{Zr:.3f}]m",
+                                    (x - 100, y + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+                    
                     else:
                         depth_text = "Depth: N/A"
                     # 中心座標と半径・depthを表示
                     cv2.putText(vis, depth_text, (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
             # 各画像を表示
-            cv2.imshow('Input', color_image)
+            cv2.imshow('Input', overlay)
             cv2.imshow('Depth Filter', filtered_image)
             cv2.imshow('Depth', depth_colormap)
             cv2.imshow('HSV Mask', hsv_mask)
-            cv2.imshow('HSV Mask Morph', mask_morph)
+            cv2.imshow('HSV Mask Morph', mask_morph_copy)
             cv2.imshow('Result', vis)
 
             k = cv2.waitKey(1) & 0xFF
             if k in (27, ord('q')):
-                ser.close()
                 break
             elif k == ord('s'):
                 save_params_dis(PARAM_PATH_DIS, dist_min_cm, dist_max_cm)
                 save_params_hsv(PARAM_PATH_HSV[hsv_param_num], lo, hi)
+                save_params_hough(PARAM_HOUGH, minDist, param1, param2, minRadius, maxRadius)
+                save_noise_params(PARAM_FILTER, ftype, k, sigmaX)
 
     finally:
+        if ARDUINO and ser is not None:
+            ser.close()
         pipeline.stop()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main(1)  # 0:赤, 1:黄, 2:青
+    main()  # 0:赤, 1:黄, 2:青
 
