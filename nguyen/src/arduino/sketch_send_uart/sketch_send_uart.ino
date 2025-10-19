@@ -1,13 +1,10 @@
 void setup() {
   // シリアル通信を9600bpsで開始
-  Serial.begin(9600);
+  Serial.begin(115200);
+  Serial.setTimeout(50); // 改行までの待ち時間（ms）
 }
 
 void loop() {
-  // "Hello, Raspberry Pi"を送信
-  // Serial.println("Hello, Raspberry Pi");
-  // 2秒待機
-  // delay(2000);
 
   // Raspberry Piからのデータを受信して表示
   if (Serial.available() > 0) {                           
@@ -16,10 +13,8 @@ void loop() {
     Serial.print("Received Data: ");
     Serial.println(receivedData);
 
-    // Expecting a numeric string like "12223333" (1 + 3 + 4 = 8 digits?)
-    // According to the user: mode:1 digit, angle:3 digits, dis:4 digits
-    // Total length expected = 1 + 3 + 4 = 8
-    const int EXPECTED_LEN = 8;
+    // Total length expected 
+    const int EXPECTED_LEN = 10;
 
     if (receivedData.length() == EXPECTED_LEN) {
       bool allDigits = true;
@@ -32,13 +27,28 @@ void loop() {
 
       if (allDigits) {
         int mode_val = receivedData.substring(0, 1).toInt();
-        int angle_val = receivedData.substring(1, 4).toInt();
-        int dis_val = receivedData.substring(4, 8).toInt();
+        // 角度の符号フラグと絶対値
+        int sign_flag_deg = receivedData.substring(1, 2).toInt(); // 0 or 1
+        int angle_abs = receivedData.substring(2, 5).toInt(); // 000..999
+        if (sign_flag_deg != 0 && sign_flag_deg != 1) {
+          Serial.println("Error: invalid sign flag (must be 0 or 1)");
+          return;
+        }
+        int angle_deg = (sign_flag_deg == 1) ? angle_abs : -angle_abs;
+
+        // 距離の符号フラグと絶対値
+        int sign_flag_dis = receivedData.substring(5, 6).toInt(); // 0 or 1 (not used here)
+        if (sign_flag_dis != 0 && sign_flag_dis != 1) {
+          Serial.println("Error: invalid sign flag (must be 0 or 1)");
+          return;
+        }
+        int dis_abs = receivedData.substring(6, 10).toInt();
+        int dis_val = (sign_flag_dis == 1) ? dis_abs : -dis_abs;
 
         Serial.print("mode_val: ");
         Serial.println(mode_val);
         Serial.print("angle_val: ");
-        Serial.println(angle_val);
+        Serial.println(angle_deg);
         Serial.print("dis_val: ");
         Serial.println(dis_val);
       } else {
