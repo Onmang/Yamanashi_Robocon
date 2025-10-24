@@ -7,8 +7,9 @@ import numpy as np
 import pyrealsense2 as rs
 import json
 from pathlib import Path
+import sys
 
-PARAM_PATH = ["hsv_params_red.json", "hsv_params_yellow.json", "hsv_params_blue.json", "hsv_params_flag.json"] # 保存先パス選択
+PARAM_PATH_HSV = ["hsv_params_red.json", "hsv_params_yellow.json", "hsv_params_blue.json", "hsv_params_flag.json", "hsv_params_green.json", "hsv_params_teaground.json", "hsv_params_laf.json", "hsv_params_banker.json"] # 保存先パス選択
 
 def _noop(x): pass
 
@@ -120,7 +121,16 @@ def draw_hsv_hist_cv(hsv):
 
     return img
 
-def main(hsv_param_num=0):
+def main():
+        # argv
+    args = sys.argv
+    if len(args) < 2:
+        print("============ Error =============================================")
+        print("Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker]")
+        print("================================================================")
+        return
+    hsv_param_num = int(args[1])
+
     pipeline = rs.pipeline()
     cfg = rs.config()
 
@@ -262,4 +272,4 @@ def main(hsv_param_num=0):
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main(hsv_param_num=0)  # 0:赤, 1:緑, 2:青
+    main()  # 0:赤, 1:緑, 2:青
