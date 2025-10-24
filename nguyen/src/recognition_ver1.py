@@ -24,7 +24,7 @@ from common_function import (
 
 # パラメータ保存用のファイルパス
 PARAM_PATH_DIS = "distance_params.json"
-PARAM_PATH_HSV = ["hsv_params_red.json", "hsv_params_yellow.json", "hsv_params_blue.json", "hsv_params_flag.json"] # 保存先パス選択
+PARAM_PATH_HSV = ["hsv_params_red.json", "hsv_params_yellow.json", "hsv_params_blue.json", "hsv_params_flag.json", "hsv_params_green.json", "hsv_params_teaground.json", "hsv_params_laf.json", "hsv_params_banker.json"] # 保存先パス選択
 PARAM_HOUGH = "houghcircles_params.json"
 PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先
 
@@ -63,7 +63,7 @@ def main():
     args = sys.argv
     if len(args) < 2:
         print("============ Error =============================================")
-        print("Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue]")
+        print("Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker]")
         print("================================================================")
         return
     hsv_param_num = int(args[1])
@@ -423,12 +423,13 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255) if "HOLD" in state else ((0,255,0) if state=="TRACK" else (0,0,255)), 2)
 
             # 各画像を表示
-            cv2.imshow('Input', overlay)
-            cv2.imshow('Depth Filter', filtered_image)
-            cv2.imshow('Depth', depth_colormap)
-            cv2.imshow('HSV Mask', hsv_mask)
-            cv2.imshow('HSV Mask Morph', mask_morph_copy)
-            cv2.imshow('Result', vis)
+            if False:
+                cv2.imshow('Input', overlay)
+                cv2.imshow('Depth Filter', filtered_image)
+                cv2.imshow('Depth', depth_colormap)
+                cv2.imshow('HSV Mask', hsv_mask)
+                cv2.imshow('HSV Mask Morph', mask_morph_copy)
+                cv2.imshow('Result', vis)
 
             k = cv2.waitKey(1) & 0xFF
             if k in (27, ord('q')):
