@@ -36,20 +36,19 @@ PARAM_HOUGH = "houghcircles_params.json"
 PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
 
 # debug
-DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
-AREA_MIN = 100  # 小ノイズ除去
+AREA_MIN =
+ 100  # 小ノイズ除去
 AREA_MAX = 6000  # 大きすぎる塊を除外（必要に応じ調整）
 
 
 # arduino シリアル通信設定
-ARDUINO = False
+ARDUINO = True
 if ARDUINO:
     global ser
 
     serial_port = "/dev/ttyACM0"  # arduino UNO
-    # serial_port = '/dev/ttyACM0'
-    # takemichi arduino nano evry
     baud_rate = 115200  # 9600, 115200
     ser = serial.Serial(
         serial_port,
@@ -413,8 +412,8 @@ def main():
                     # 一定距離いないになったら停止、角度はそのまま
                     # ----------------------------------------
                     dist_mm_thresh = 300  # mm
-                    if dist_mm < dist_mm_thresh:
-                        dist_mm = 0
+                    # 300mm 未満なら 0、以上なら実距離を送る
+                    dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
 
                     # 更新
                     prev_angle = angle_deg
@@ -451,11 +450,11 @@ def main():
                     # 送信（TRACK: '1'）
                     if ARDUINO:
                         angle_code = encode_angle(angle_deg)
-                        dist_code = encode_distance(1, dist_mm)
+                        dist_code = encode_distance(1, dist_mm_send)
                         msg = f"{mode}{angle_code}{dist_code}\n"
                         try:
                             ser.write(msg.encode("ascii"))
-                            # print(f"Sent(TRACK): {msg.strip()}")
+                            print(f"Sent(TRACK): {msg.strip()}")
                         except Exception as e:
                             print("Failed to write to serial:", e)
                     sent = True
@@ -475,7 +474,7 @@ def main():
                         msg = f"{mode}{angle_code}{dist_code}\n"
                         try:
                             ser.write(msg.encode("ascii"))
-                            # print(f"Sent(HOLD): {msg.strip()}")
+                            print(f"Sent(HOLD): {msg.strip()}")
                         except Exception as e:
                             print("Failed to write to serial:", e)
                 else:
@@ -487,7 +486,7 @@ def main():
                         msg = "0000000000\n"  # mode='0', angle='0000', dist='0000'
                         try:
                             ser.write(msg.encode("ascii"))
-                            # print(f"Sent(LOST): {msg.strip()}")
+                            print(f"Sent(LOST): {msg.strip()}")
                         except Exception as e:
                             print("Failed to write to serial:", e)
 
@@ -522,7 +521,8 @@ def main():
             ser.close()
         cam_d435i.pipeline.stop()
         # cam_d405.pipeline.stop()
-        cv2.destroyAllWindows()
+        if DEBUG:
+            cv2.destroyAllWindows()
 
 
 def compute_center_distance(depth_image, depth_scale, W, H, cx, cy, roi_size=10):
