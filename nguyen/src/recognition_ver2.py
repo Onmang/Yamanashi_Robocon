@@ -36,7 +36,7 @@ PARAM_HOUGH = "houghcircles_params.json"
 PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先
 
 # debug
-DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
 
 # arduino シリアル通信設定
 ARDUINO = False
@@ -304,6 +304,13 @@ def main():
                         EMA_ALPHA * angle_deg_raw + (1 - EMA_ALPHA) * prev_angle
                     )
                     dist_mm = round(EMA_ALPHA * dist_rob + (1 - EMA_ALPHA) * prev_dist)
+
+                    # ----------------------------------------
+                    # 一定距離いないになったら停止、角度はそのまま
+                    # ----------------------------------------
+                    dist_mm_thresh = 300  # mm
+                    if dist_mm < dist_mm_thresh:
+                        dist_mm = 0
 
                     # 更新
                     prev_angle = angle_deg
