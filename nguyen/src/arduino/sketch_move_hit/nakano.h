@@ -18,8 +18,8 @@ const unsigned long UPDATE_PERIOD_US = 1000; // 制御周期（1kHz）
 // ===== 進行方向の符号 =====
 const int FORWARD_X_SIGN = +1;
 const int FORWARD_Y_SIGN = -1;
-const int ROT_CCW_X_SIGN = +1;
-const int ROT_CCW_Y_SIGN = -1;
+const int ROT_CCW_X_SIGN = -1;
+const int ROT_CCW_Y_SIGN = +1;
 
 // ===== 速度・調整 =====
 const float LIN_FAST_RPS = 1.00f;     // 直進：遠い時
