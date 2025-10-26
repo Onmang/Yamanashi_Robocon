@@ -41,6 +41,7 @@ CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MAX = 6000  # 大きすぎる塊を除外（必要に応じ調整）
 
+
 # arduino シリアル通信設定
 ARDUINO = False
 if ARDUINO:
@@ -407,6 +408,13 @@ def main():
                         EMA_ALPHA * angle_deg_raw + (1 - EMA_ALPHA) * prev_angle
                     )
                     dist_mm = round(EMA_ALPHA * dist_rob + (1 - EMA_ALPHA) * prev_dist)
+
+                    # ----------------------------------------
+                    # 一定距離いないになったら停止、角度はそのまま
+                    # ----------------------------------------
+                    dist_mm_thresh = 300  # mm
+                    if dist_mm < dist_mm_thresh:
+                        dist_mm = 0
 
                     # 更新
                     prev_angle = angle_deg
