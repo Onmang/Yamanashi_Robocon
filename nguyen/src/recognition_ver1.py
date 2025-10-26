@@ -250,6 +250,7 @@ def main():
 
             # 低ノイズ化：GUIの選択で適用
             ftype, k, sigmaX = get_noise_params("Filter GUI")
+            # print(f"Filter: type={ftype}, k={k}, sigmaX={sigmaX}")
             if ftype == 1:
                 filtered_image = cv2.medianBlur(filtered_image, k)
             elif ftype == 2:
@@ -281,103 +282,107 @@ def main():
             # ラベリング処理
             retval, labels, stats, centroids = cv2.connectedComponentsWithStats(gray)
             mask_morph_copy = cv2.cvtColor(mask_morph, cv2.COLOR_GRAY2BGR)
+
+            # --- ここで「円形度で良さそうな領域だけ集めるためのマスク」を用意 ---
+            candidate_mask = np.zeros_like(mask_morph)  # ここに有望な領域だけ塗る
             for i in range(1, retval):  # 0は背景なのでスキップ
                 x, y, w, h, area = stats[i]
                 cx, cy = int(centroids[i][0]), int(centroids[i][1])
-                if area >= 100 and area < 6000:  # 面積が小さいノイズを除去
-                    cv2.rectangle(
-                        mask_morph_copy, (x, y), (x + w, y + h), (255, 0, 0), 2
-                    )
-                    cv2.circle(mask_morph_copy, (cx, cy), 3, (0, 255, 255), -1)
-                    # # 中心座標のdepthデータ取得
-                    # if 0 <= cy < depth_image.shape[0] and 0 <= cx < depth_image.shape[1]:
-                    #     depth_value = depth_image[cy, cx]
-                    #     depth_m = depth_value * depth_scale
-                    #     depth_text = f"{depth_m:.3f}m"
-                    # else:
-                    #     depth_text = "Depth: N/A"
-                    # # 中心座標とdepthを表示
-                    # cv2.putText(mask_morph_copy, depth_text, (cx + 5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
-                    cv2.putText(
-                        mask_morph_copy,
-                        f"[{i}]:{area}",
-                        (cx + 25, cy - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 255, 0),
-                        3,
-                    )
 
-            if False:
-                # 2値マスクから輪郭抽出, 円を作る
+                # 面積フィルタ（元のまま）
+                if area < 100 or area > 6000:
+                    continue
+
+                # このラベルだけ取り出すマスクを作る
+                blob_mask = np.zeros_like(mask_morph)
+                blob_mask[labels == i] = 255
+
+                # このラベル領域内だけで輪郭をとる
+                roi = blob_mask[y:y+h, x:x+w]
                 contours, _ = cv2.findContours(
-                    mask_morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                    roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
+
+                is_round_enough = False  # フラグ
                 for cnt in contours:
-                    area = cv2.contourArea(cnt)
-                    if area < AREA_MIN or area > AREA_MAX:
+                    area_cnt = cv2.contourArea(cnt)
+                    if area_cnt <= 0:
                         continue
 
                     peri = cv2.arcLength(cnt, True)
                     if peri <= 0:
                         continue
 
-                    circularity = (4.0 * np.pi * area) / (peri * peri)
-                    if circularity < CIRC_MIN:
-                        continue
+                    circularity = (4.0 * np.pi * area_cnt) / (peri * peri)
 
-                    # 円近似：最小外接円（高速で安定）
-                    (cx_f, cy_f), r_f = cv2.minEnclosingCircle(cnt)
-                    cx, cy, r = int(cx_f), int(cy_f), int(r_f)
+                    # 円形度チェック
+                    if circularity >= CIRC_MIN: 
+                        is_round_enough = True
 
-                    # 深度表示（任意）
-                    if (
-                        0 <= cy < depth_image.shape[0]
-                        and 0 <= cx < depth_image.shape[1]
-                    ):
-                        depth_m = depth_image[cy, cx] * rs_d435i.depth_scale
-                        depth_text = f"{depth_m:.3f}m"
-                    else:
-                        depth_text = "Depth: N/A"
+                        # デバッグ用の可視化（今の表示は維持しつつ円形度も出す）
+                        (cx_f, cy_f), r_f = cv2.minEnclosingCircle(cnt)
+                        cx_abs = int(cx_f) + x
+                        cy_abs = int(cy_f) + y
+                        r_px = int(r_f)
 
-                    # 可視化：マゼンタ円＋シアン中心（Hough=緑と区別）
-                    cv2.circle(vis, (cx, cy), r, (255, 0, 255), 2)  # magenta
-                    cv2.circle(vis, (cx, cy), 2, (255, 255, 0), 3)  # cyan
-                    cv2.putText(
-                        vis,
-                        f"C:{circularity:.2f}",
-                        (cx + 30, cy + 70),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (255, 0, 255),
-                        2,
-                        cv2.LINE_AA,
-                    )
-                    cv2.putText(
-                        vis,
-                        depth_text,
-                        (cx + 30, cy + 30),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (255, 0, 255),
-                        2,
-                        cv2.LINE_AA,
-                    )
+                        cv2.rectangle(
+                            mask_morph_copy, (x, y), (x + w, y + h), (255, 0, 0), 2
+                        )
+                        cv2.circle(mask_morph_copy, (cx, cy), 3, (0, 255, 255), -1)
+                        cv2.putText(
+                            mask_morph_copy,
+                            f"[{i}]:{area} C:{circularity:.2f}",
+                            (cx + 25, cy - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1,
+                            (0, 255, 0),
+                            3,
+                        )
+
+                        # 可視化（マゼンタ円）→元のif Falseブロックでやってたのに近い
+                        cv2.circle(
+                            vis, (cx_abs, cy_abs), r_px, (255, 0, 255), 2
+                        )
+                        cv2.circle(
+                            vis, (cx_abs, cy_abs), 2, (255, 255, 0), 3
+                        )
+                        cv2.putText(
+                            vis,
+                            f"C:{circularity:.2f}",
+                            (cx_abs + 30, cy_abs + 30),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (255, 0, 255),
+                            2,
+                            cv2.LINE_AA,
+                        )
+
+                        # 輪郭が1個でも十分丸いなら、そのラベルを候補にする
+                        break
+
+                # 丸いと判断できたラベル領域だけ candidate_mask に追加
+                if is_round_enough:
+                    candidate_mask[labels == i] = 255
 
             # ハフ変換、円
             minDist, param1, param2, minRadius, maxRadius = get_houghcircles_params(
                 "HoughCircles Control"
             )
-            circles = cv2.HoughCircles(
-                gray,
-                cv2.HOUGH_GRADIENT,
-                dp=1,
-                minDist=minDist,
-                param1=param1,
-                param2=param2,
-                minRadius=minRadius,
-                maxRadius=maxRadius,
-            )
+
+            # 丸いと判断された領域だけ残した画像を作る
+            if np.count_nonzero(candidate_mask) > 0:
+                gray_for_hough = cv2.bitwise_and(gray, gray, mask=candidate_mask)
+
+                circles = cv2.HoughCircles(
+                    gray_for_hough,
+                    cv2.HOUGH_GRADIENT,
+                    dp=1,
+                    minDist=minDist,
+                    param1=param1,
+                    param2=param2,
+                    minRadius=minRadius,
+                    maxRadius=maxRadius,
+                )
 
             state = "LOST"  # 可視化用（任意）
             sent = False  # このフレームで送信済みか
@@ -540,7 +545,7 @@ def main():
             )
 
             # 各画像を表示
-            if False:
+            if True:
                 cv2.imshow("Input", overlay)
                 cv2.imshow("Depth Filter", filtered_image)
                 cv2.imshow("Depth", depth_colormap)

@@ -33,10 +33,13 @@ PARAM_PATH_HSV = [
     "hsv_params_banker.json",
 ]  # 保存先パス選択
 PARAM_HOUGH = "houghcircles_params.json"
-PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先
+PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
 
 # debug
 DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
+CIRC_MIN = 0.80
+AREA_MIN = 100  # 小ノイズ除去
+AREA_MAX = 6000  # 大きすぎる塊を除外（必要に応じ調整）
 
 # arduino シリアル通信設定
 ARDUINO = False
@@ -71,6 +74,17 @@ def main():
     teag_lo, teag_hi = load_hsv_from_json(PARAM_PATH_HSV[5])
     laf_lo, laf_hi = load_hsv_from_json(PARAM_PATH_HSV[6])
     banker_lo, banker_hi = load_hsv_from_json(PARAM_PATH_HSV[7])
+
+    # 距離パラメータ読み込み
+    dist_min_cm, dist_max_cm = load_filter_distance_from_json(PARAM_PATH_DIS)
+
+    # ガウシアンフィルター
+    gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
+    
+    # ハフ変換パラメータ読み込み
+    minDist, param1, param2, minRadius, maxRadius = load_hough_params_from_json(
+        PARAM_HOUGH
+    )
     if DEBUG:
         print(f"Ball HSV lo:{ball_lo}, hi:{ball_hi}")
         print(f"Flag HSV lo:{flag_lo}, hi:{flag_hi}")
@@ -78,17 +92,13 @@ def main():
         print(f"Teag HSV lo:{teag_lo}, hi:{teag_hi}")
         print(f"LAF HSV lo:{laf_lo}, hi:{laf_hi}")
         print(f"Banker HSV lo:{banker_lo}, hi:{banker_hi}")
-
-    # 距離パラメータ読み込み
-    dist_min_cm, dist_max_cm = load_filter_distance_from_json(PARAM_PATH_DIS)
-
-    # ガウシアンフィルター
-    k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
-
-    # ハフ変換パラメータ読み込み
-    minDist, param1, param2, minRadius, maxRadius = load_hough_params_from_json(
-        PARAM_HOUGH
-    )
+        print(f"Gaussian Filter: k={gaus_k}, sigmaX={sigmaX}")
+        print(
+            f"Distance Filter: min={dist_min_cm}cm, max={dist_max_cm}cm"
+        )
+        print(
+            f"HoughCircles: minDist={minDist}, param1={param1}, param2={param2}, minRadius={minRadius}, maxRadius={maxRadius}"
+        )
 
     # --------------------------------------------
     # カメラ初期化
@@ -105,9 +115,9 @@ def main():
         fps=FPS,
         extrinsic_guess={
             "tx": -(32.5 * 0.001),
-            "ty": 0.0,
-            "tz": 110 * 0.001,
-            "rx_deg": -90,
+            "ty": -50 * 0.001,
+            "tz": 200 * 0.001,
+            "rx_deg": -103,
             "ry_deg": 0,
             "rz_deg": 0,
         },
@@ -137,16 +147,16 @@ def main():
     if DEBUG:
         # 作成
         cv2.namedWindow("Input", cv2.WINDOW_NORMAL)
-        cv2.namedWindow("Depth Filter", cv2.WINDOW_NORMAL)
+        cv2.namedWindow("Gaussian Filter", cv2.WINDOW_NORMAL)
         cv2.namedWindow("HSV Mask", cv2.WINDOW_NORMAL)
         cv2.namedWindow("HSV Mask Morph", cv2.WINDOW_NORMAL)
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
 
         # サイズ変更
-        w_re = 640
-        h_re = 360
+        w_re = 450
+        h_re = 350
         cv2.resizeWindow("Input", w_re, h_re)
-        cv2.resizeWindow("Depth Filter", w_re, h_re)
+        cv2.resizeWindow("Gaussian Filter", w_re, h_re)
         cv2.resizeWindow("HSV Mask", w_re, h_re)
         cv2.resizeWindow("HSV Mask Morph", w_re, h_re)
         cv2.resizeWindow("Result", w_re, h_re)
@@ -155,7 +165,7 @@ def main():
         offset_x = 50
         offset_y = 50
         cv2.moveWindow("Input", offset_x, offset_y)
-        cv2.moveWindow("Depth Filter", w_re + offset_x, offset_y)
+        cv2.moveWindow("Gaussian Filter", w_re + offset_x, offset_y)
         cv2.moveWindow("HSV Mask", offset_x, h_re + offset_y)
         cv2.moveWindow("HSV Mask Morph", w_re + offset_x, h_re + offset_y)
         cv2.moveWindow("Result", 2 * w_re + offset_x, h_re + offset_y)
@@ -219,7 +229,7 @@ def main():
                 )
                 cv2.drawMarker(overlay, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
 
-            # 距離によるフィルタリング
+            ## 距離によるフィルタリング ##
             dist_min_raw = (dist_min_cm / 100.0) / cam_d435i.depth_scale
             dist_max_raw = (dist_max_cm / 100.0) / cam_d435i.depth_scale
 
@@ -229,18 +239,17 @@ def main():
             # マスクを適用してフィルタリング
             filtered_image = cv2.bitwise_and(color_image, color_image, mask=mask)
 
-            # ガウシアンフィルター
+            ## ガウシアンフィルター ##
             filtered_image = cv2.GaussianBlur(
-                filtered_image, (k, k), sigmaX if sigmaX > 0 else 0
-            )
+                filtered_image, (gaus_k, gaus_k), sigmaX)
 
-            # HSVマスク作成
+            ## HSVマスク作成 ##
             hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
             hsv_mask = cv2.inRange(
                 hsv, np.array(ball_lo, np.uint8), np.array(ball_hi, np.uint8)
             )
 
-            # モルフォロジー変換（オープニング＋クロージング）
+            ## モルフォロジー変換（オープニング＋クロージング）##
             kernel = np.ones((3, 3), np.uint8)
             mask_morph = cv2.morphologyEx(
                 hsv_mask, cv2.MORPH_OPEN, kernel, iterations=3
@@ -255,17 +264,106 @@ def main():
             # グレースケール変換
             gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
 
-            # ハフ変換で円検出
-            circles = cv2.HoughCircles(
-                gray,
-                cv2.HOUGH_GRADIENT,
-                dp=1,
-                minDist=minDist,
-                param1=param1,
-                param2=param2,
-                minRadius=minRadius,
-                maxRadius=maxRadius,
-            )
+            ## ラベリング処理 ##
+            retval, labels, stats, centroids = cv2.connectedComponentsWithStats(gray)
+            mask_morph_copy = cv2.cvtColor(mask_morph, cv2.COLOR_GRAY2BGR)
+
+            # 円形度良いものだけ抜き出す
+            candidate_mask = np.zeros_like(mask_morph)  # ここに有望な領域だけ塗る
+
+            for i in range(1, retval):  # 0は背景なのでスキップ
+                x, y, w, h, area = stats[i]
+                cx, cy = int(centroids[i][0]), int(centroids[i][1])
+
+                # 面積フィルタ（元のまま）
+                if area < AREA_MIN or area > AREA_MAX:
+                    continue
+
+                # このラベルだけ取り出すマスクを作る
+                blob_mask = np.zeros_like(mask_morph)
+                blob_mask[labels == i] = 255
+
+                # このラベル領域内だけで輪郭をとる
+                roi = blob_mask[y:y+h, x:x+w]
+                contours, _ = cv2.findContours(
+                    roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+
+                is_round_enough = False  # フラグ
+                for cnt in contours:
+                    area_cnt = cv2.contourArea(cnt)
+                    if area_cnt <= 0:  # 一応
+                        continue
+
+                    peri = cv2.arcLength(cnt, True)
+                    if peri <= 0:
+                        continue
+
+                    circularity = (4.0 * np.pi * area_cnt) / (peri * peri)
+
+                    # 円形度チェック
+                    if circularity >= CIRC_MIN:  
+                        is_round_enough = True
+
+                        if DEBUG:
+                            # デバッグ用の可視化（今の表示は維持しつつ円形度も出す）
+                            (cx_f, cy_f), r_f = cv2.minEnclosingCircle(cnt)
+                            cx_abs = int(cx_f) + x
+                            cy_abs = int(cy_f) + y
+                            r_px = int(r_f)
+
+                            cv2.rectangle(
+                                mask_morph_copy, (x, y), (x + w, y + h), (255, 0, 0), 2
+                            )
+                            cv2.circle(mask_morph_copy, (cx, cy), 3, (0, 255, 255), -1)
+                            cv2.putText(
+                                mask_morph_copy,
+                                f"[{i}]:{area} C:{circularity:.2f}",
+                                (cx + 25, cy - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                1,
+                                (0, 255, 0),
+                                3,
+                            )
+                            # 可視化（マゼンタ円）→元のif Falseブロックでやってたのに近い
+                            cv2.circle(
+                                vis, (cx_abs, cy_abs), r_px, (255, 0, 255), 2
+                            )
+                            cv2.circle(
+                                vis, (cx_abs, cy_abs), 2, (255, 255, 0), 3
+                            )
+                            cv2.putText(
+                                vis,
+                                f"C:{circularity:.2f}",
+                                (cx_abs + 30, cy_abs + 30),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.7,
+                                (255, 0, 255),
+                                2,
+                                cv2.LINE_AA,
+                            )
+
+                        # 輪郭が1個でも十分丸いなら、そのラベルを候補にする
+                        break
+
+                # 丸いと判断できたラベル領域だけ candidate_mask に追加
+                if is_round_enough:
+                    candidate_mask[labels == i] = 255
+
+            # 丸いと判断された領域だけ残した画像を作る
+            if np.count_nonzero(candidate_mask) > 0:
+                gray_for_hough = cv2.bitwise_and(gray, gray, mask=candidate_mask)
+
+                circles = cv2.HoughCircles(
+                    gray_for_hough,
+                    cv2.HOUGH_GRADIENT,
+                    dp=1,
+                    minDist=minDist,
+                    param1=param1,
+                    param2=param2,
+                    minRadius=minRadius,
+                    maxRadius=maxRadius,
+                )
 
             # 送信準備
             state = "LOST"  # 可視化用（任意）
@@ -275,8 +373,13 @@ def main():
             if circles is not None and len(circles[0]) > 0:
                 # ---- 1個だけ扱う（最初の円）----
                 i = np.uint16(np.around(circles))[0][0]
-                x, y, _ = int(i[0]), int(i[1]), int(i[2])
+                x, y, r = int(i[0]), int(i[1]), int(i[2])
 
+                if DEBUG:
+                    # 可視化（任意）
+                    cv2.circle(vis, (x, y), r, (0, 255, 0), 2)  # 外周(緑)
+                    cv2.circle(vis, (x, y), 2, (0, 0, 255), 3)  # 中心(赤)
+                    
                 # カメラ3D→ロボ座標へ
                 cam3d, rob3d = project_center_to_robot(
                     u=x,
@@ -314,21 +417,21 @@ def main():
                     # 表示
                     if DEBUG:
                         # 左上に固定して表示
-                        tx, ty = 30, 50  # 表示開始位置（左上からのオフセット）
+                        tx, ty = 10, 70  # 表示開始位置（左上からのオフセット）
                         line_h = 40  # 行間ピクセル
                         cv2.putText(
                             vis,
-                            f"D_rob:{dist_mm}mm",
+                            f"D_rob: {dist_mm}mm",
                             (tx, ty),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             1,
-                            (0, 255, 0),
+                            (0, 0, 255),
                             2,
                             cv2.LINE_AA,
                         )
                         cv2.putText(
                             vis,
-                            f"Angle:{angle_deg}deg",
+                            f"Angle: {angle_deg}deg",
                             (tx, ty + line_h),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             1,
@@ -397,9 +500,9 @@ def main():
             # 各画像を表示
             if DEBUG:
                 cv2.imshow("Input", overlay)
-                cv2.imshow("Depth Filter", filtered_image)
+                cv2.imshow("Gaussian Filter", filtered_image)
                 cv2.imshow("HSV Mask", hsv_mask)
-                cv2.imshow("HSV Mask Morph", mask_morph)
+                cv2.imshow("HSV Mask Morph", mask_morph_copy)
                 cv2.imshow("Result", vis)
 
             k = cv2.waitKey(1) & 0xFF
