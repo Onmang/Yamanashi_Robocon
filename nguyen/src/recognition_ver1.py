@@ -2,7 +2,6 @@
 # 認識バージョン１
 # パラメータ関係はd435iベースにやっている
 
-
 import json
 import sys
 import time
@@ -13,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyrealsense2 as rs
 import serial
+
 from common_function import (
     CameraParam,
     compute_angles_from_position,
@@ -42,7 +42,6 @@ PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
-
 
 # Arduino接続設定
 ARDUINO = False
