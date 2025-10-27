@@ -129,7 +129,6 @@ void loop() {
       int val = (257 - dis_val_mm) / 2;
       angleA = val;
 
-      // ⚠ delay()は本当は避けたい（その間ステップ止まる）けど
       // ひとまずそのままやるならこう
       delay(1000);
       servoB.write(150);
