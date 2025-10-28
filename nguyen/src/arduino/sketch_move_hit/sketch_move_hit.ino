@@ -113,9 +113,6 @@ void loop() {
   // ---------------------------------
   switch (mode_val) {
     case 1: {
-#ifdef DEBUG
-      Serial.println("move mode");
-#endif
       float x_cmd = 0.0f, y_cmd = 0.0f;
       computeCommandRates(x_cmd, y_cmd); // 角度優先→距離
       driveVelocity(x_cmd, y_cmd, dt);   // ステップ吐く
@@ -123,9 +120,6 @@ void loop() {
     }
 
     case 2: {
-#ifdef DEBUG
-      Serial.println("hitting mode");
-#endif
       int val = (257 - dis_val_mm) / 2;
       angleA = val;
 
@@ -143,9 +137,6 @@ void loop() {
     }
 
     default: {
-#ifdef DEBUG
-      Serial.println("Non mode");
-#endif
       // mode_valが1でも2でもない → 何もしない（停止）
       break;
     }
