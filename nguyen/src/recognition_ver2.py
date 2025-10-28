@@ -38,9 +38,8 @@ PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保�
 # debug
 DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
-AREA_MIN =
- 100  # 小ノイズ除去
-AREA_MAX = 6000  # 大きすぎる塊を除外（必要に応じ調整）
+AREA_MIN = 100  # 小ノイズ除去
+AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
 
 
 # arduino シリアル通信設定
@@ -183,8 +182,11 @@ def main():
         prev_dist = 0  # 直近の平滑化距離[mm]
         miss_count = 0  # 見失いカウンタ
 
+        print("main loop....")
         # main loop
         while True:
+            circles = None  
+
             # Get frameset of color and depth
             frames = cam_d435i.pipeline.wait_for_frames()
 
@@ -259,7 +261,7 @@ def main():
             )
 
             # モルフォロジーマスク適用
-            vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph)
+            vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph).copy()
 
             # グレースケール変換
             gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
@@ -366,107 +368,114 @@ def main():
                 )
 
             # 送信準備
-            state = "LOST"  # 可視化用（任意）
-            sent = False  # このフレームで送信済みか
+            state = "LOST"      # 可視化用
+            sent = False        # このフレームで送信済みか
+            valid_track = False # 本物のボールを捉えたか
 
-            # 一番最初の円が最も円らしい
+            # === 1. 円検出結果の評価 ===
             if circles is not None and len(circles[0]) > 0:
-                # ---- 1個だけ扱う（最初の円）----
+                # 最初の円だけ使う
                 i = np.uint16(np.around(circles))[0][0]
                 x, y, r = int(i[0]), int(i[1]), int(i[2])
 
-                if DEBUG:
-                    # 可視化（任意）
-                    cv2.circle(vis, (x, y), r, (0, 255, 0), 2)  # 外周(緑)
-                    cv2.circle(vis, (x, y), 2, (0, 0, 255), 3)  # 中心(赤)
-                    
-                # カメラ3D→ロボ座標へ
-                cam3d, rob3d = project_center_to_robot(
-                    u=x,
-                    v=y,
-                    depth_image=depth_image,
-                    depth_scale=cam_d435i.depth_scale,
-                    intr=cam_d435i.intr,
-                    T_cam2rob=cam_d435i.T_cam2rob,
-                    roi=7,
-                )
+                # 半径チェック（ノイズ除外用。調整してOK）
+                if 10 <= r <= 100:
 
-                if cam3d is not None:
-                    # ---- TRACK: 検出あり ----
-                    Xc, Yc, Zc = cam3d
-                    Xr, Yr, Zr = rob3d
-
-                    # 距離[mm]（ロボ座標: X-Y 平面）
-                    dist_rob = round(np.sqrt(Xr**2 + Yr**2) * 1000)
-
-                    # 角度[deg]（ロボ進行方向=+Y基準）
-                    angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
-
-                    # === EMA平滑化 ===
-                    angle_deg = round(
-                        EMA_ALPHA * angle_deg_raw + (1 - EMA_ALPHA) * prev_angle
-                    )
-                    dist_mm = round(EMA_ALPHA * dist_rob + (1 - EMA_ALPHA) * prev_dist)
-
-                    # ----------------------------------------
-                    # 一定距離いないになったら停止、角度はそのまま
-                    # ----------------------------------------
-                    dist_mm_thresh = 300  # mm
-                    # 300mm 未満なら 0、以上なら実距離を送る
-                    dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
-
-                    # 更新
-                    prev_angle = angle_deg
-                    prev_dist = dist_mm
-                    miss_count = 0
-                    state = "TRACK"
-
-                    # 表示
                     if DEBUG:
-                        # 左上に固定して表示
-                        tx, ty = 10, 70  # 表示開始位置（左上からのオフセット）
-                        line_h = 40  # 行間ピクセル
-                        cv2.putText(
-                            vis,
-                            f"D_rob: {dist_mm}mm",
-                            (tx, ty),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            (0, 0, 255),
-                            2,
-                            cv2.LINE_AA,
-                        )
-                        cv2.putText(
-                            vis,
-                            f"Angle: {angle_deg}deg",
-                            (tx, ty + line_h),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            (0, 255, 0),
-                            2,
-                            cv2.LINE_AA,
-                        )
+                        cv2.circle(vis, (x, y), r, (0, 255, 0), 2)  # 外周(緑)
+                        cv2.circle(vis, (x, y), 2, (0, 0, 255), 3)  # 中心(赤)
 
-                    # 送信（TRACK: '1'）
-                    if ARDUINO:
-                        angle_code = encode_angle(angle_deg)
-                        dist_code = encode_distance(1, dist_mm_send)
-                        msg = f"{mode}{angle_code}{dist_code}\n"
-                        try:
-                            ser.write(msg.encode("ascii"))
-                            print(f"Sent(TRACK): {msg.strip()}")
-                        except Exception as e:
-                            print("Failed to write to serial:", e)
-                    sent = True
-                else:
-                    # cam3d 取得失敗 → 見失い扱いにフォールバック
-                    pass
+                    # ピクセル→3D→ロボ座標
+                    cam3d, rob3d = project_center_to_robot(
+                        u=x,
+                        v=y,
+                        depth_image=depth_image,
+                        depth_scale=cam_d435i.depth_scale,
+                        intr=cam_d435i.intr,
+                        T_cam2rob=cam_d435i.T_cam2rob,
+                        roi=7,
+                    )
+
+                    if cam3d is not None:
+                        Xc, Yc, Zc = cam3d
+                        Xr, Yr, Zr = rob3d
+
+                        # ロボ座標での水平距離[mm]
+                        dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
+
+                        # 距離がありえない値（極端にデカい/NaN）なら捨てる
+                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 3000):
+
+                            # ここまで到達したら「本物のトラック」とみなす
+                            valid_track = True
+
+                            # 角度[deg] ロボ+Y基準
+                            angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
+
+                            # === EMA平滑化 ===
+                            angle_deg = round(
+                                EMA_ALPHA * angle_deg_raw + (1 - EMA_ALPHA) * prev_angle
+                            )
+                            dist_mm_raw = round(dist_rob_mm)
+                            dist_mm = round(
+                                EMA_ALPHA * dist_mm_raw + (1 - EMA_ALPHA) * prev_dist
+                            )
+
+                            # しきい値以内なら 0 距離を送る
+                            dist_mm_thresh = 400  # mm
+                            dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
+
+                            # 前回値更新
+                            prev_angle = angle_deg
+                            prev_dist = dist_mm
+
+                            # 見失いカウンタをここでだけリセット
+                            miss_count = 0
+
+                            # 表示情報
+                            state = "TRACK"
+                            if DEBUG:
+                                tx, ty = 10, 70
+                                line_h = 40
+                                cv2.putText(
+                                    vis,
+                                    f"D_rob: {dist_mm}mm",
+                                    (tx, ty),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    1,
+                                    (0, 0, 255),
+                                    2,
+                                    cv2.LINE_AA,
+                                )
+                                cv2.putText(
+                                    vis,
+                                    f"Angle: {angle_deg}deg",
+                                    (tx, ty + line_h),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    1,
+                                    (0, 255, 0),
+                                    2,
+                                    cv2.LINE_AA,
+                                )
+
+                            # シリアル送信
+                            if ARDUINO:
+                                angle_code = encode_angle(angle_deg)
+                                dist_code = encode_distance(1, dist_mm_send)
+                                msg = f"{mode}{angle_code}{dist_code}\n"
+                                try:
+                                    ser.write(msg.encode("ascii"))
+                                    # print(f"Sent(TRACK): {msg.strip()}")
+                                except Exception as e:
+                                    print("Failed to write to serial:", e)
+
+                            sent = True  # 今フレームは送った
 
             # ---- 検出なし or cam3d取得失敗 → HOLD / LOST ----
             if not sent:
                 miss_count += 1
                 if miss_count <= MISS_LIMIT:
-                    # HOLD: 直前値を維持して送信（'2'）
+                    # HOLD: 直前値を維持して送信
                     state = f"HOLD {miss_count}/{MISS_LIMIT}"
                     if ARDUINO:
                         angle_code = encode_angle(prev_angle)
@@ -476,9 +485,9 @@ def main():
                             ser.write(msg.encode("ascii"))
                             print(f"Sent(HOLD): {msg.strip()}")
                         except Exception as e:
-                            print("Failed to write to serial:", e)
+                            # print("Failed to write to serial:", e)
                 else:
-                    # LOST: 安全化（ゼロ送信、直前値もリセット）（'0'）
+                    # LOST: 安全化（ゼロ送信、直前値もリセット）
                     state = "LOST"
                     prev_angle = 0
                     prev_dist = 0
@@ -486,7 +495,7 @@ def main():
                         msg = "0000000000\n"  # mode='0', angle='0000', dist='0000'
                         try:
                             ser.write(msg.encode("ascii"))
-                            print(f"Sent(LOST): {msg.strip()}")
+                            # print(f"Sent(LOST): {msg.strip()}")
                         except Exception as e:
                             print("Failed to write to serial:", e)
 

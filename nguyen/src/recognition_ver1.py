@@ -178,6 +178,7 @@ def main():
         miss_count = 0  # 見失いカウンタ
 
         while True:
+            circles = None  # ←これを追加
             # Get frameset of color and depth
             frames = pipeline.wait_for_frames()
 
@@ -274,7 +275,7 @@ def main():
             )
 
             # 可視化（マスクをカラーに適用）
-            vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph)
+            vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph).copy()
 
             # グレースケール変換
             gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
