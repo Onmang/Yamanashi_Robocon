@@ -29,9 +29,9 @@ void setup() {
   servoB.attach(10);  // ミニサーボ
   servoC.attach(11);  // 角度サーボ
 
-  servoA.write(angleA);
-  servoB.write(angleB);
-  servoC.write(angleC);
+  servoB.write(150);
+  delay(1000);
+  servoA.write(60);
 
   // nakano setup
   pinMode(X_STEP, OUTPUT);
@@ -123,16 +123,17 @@ void loop() {
       int val = (257 - dis_val_mm) / 2;
       angleA = val;
 
-      // ⚠ delay()は本当は避けたい（その間ステップ止まる）けど
       // ひとまずそのままやるならこう
-      delay(1000);
-      servoB.write(150);
       delay(1000);
       servoA.write(angleA);
       delay(2000);
       servoB.write(40);
       delay(2000);
       servoA.write(180);
+      delay(2000);
+      servoB.write(150);
+      delay(2000);
+      servoA.write(60);
       break;
     }
 
