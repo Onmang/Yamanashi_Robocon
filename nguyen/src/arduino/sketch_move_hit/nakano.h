@@ -1,4 +1,5 @@
 // 中野の定義ファイル。定数や関数
+//20251027
 
 // ===== CNC Shield V3 (UNO) pins (GRBL準拠) =====
 const int X_STEP = 2;
