@@ -31,7 +31,7 @@ void setup() {
 
   servoB.write(150);
   delay(1000);
-  servoA.write(60);
+  servoA.write(30);
 
   // nakano setup
   pinMode(X_STEP, OUTPUT);
@@ -121,7 +121,7 @@ void loop() {
 
     case 2: {
       int val = (257 - dis_val_mm) / 2;
-      angleA = val;
+      angleA = constrain(val, 130, 0);
 
       // ひとまずそのままやるならこう
       delay(1000);
@@ -133,7 +133,7 @@ void loop() {
       delay(2000);
       servoB.write(150);
       delay(2000);
-      servoA.write(60);
+      servoA.write(30);
       break;
     }
 
