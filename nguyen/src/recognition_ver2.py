@@ -79,7 +79,7 @@ def main():
 
     # ガウシアンフィルター
     gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
-    
+
     # ハフ変換パラメータ読み込み
     minDist, param1, param2, minRadius, maxRadius = load_hough_params_from_json(
         PARAM_HOUGH
@@ -92,9 +92,7 @@ def main():
         print(f"LAF HSV lo:{laf_lo}, hi:{laf_hi}")
         print(f"Banker HSV lo:{banker_lo}, hi:{banker_hi}")
         print(f"Gaussian Filter: k={gaus_k}, sigmaX={sigmaX}")
-        print(
-            f"Distance Filter: min={dist_min_cm}cm, max={dist_max_cm}cm"
-        )
+        print(f"Distance Filter: min={dist_min_cm}cm, max={dist_max_cm}cm")
         print(
             f"HoughCircles: minDist={minDist}, param1={param1}, param2={param2}, minRadius={minRadius}, maxRadius={maxRadius}"
         )
@@ -185,7 +183,7 @@ def main():
         print("main loop....")
         # main loop
         while True:
-            circles = None  
+            circles = None
 
             # Get frameset of color and depth
             frames = cam_d435i.pipeline.wait_for_frames()
@@ -242,8 +240,7 @@ def main():
             filtered_image = cv2.bitwise_and(color_image, color_image, mask=mask)
 
             ## ガウシアンフィルター ##
-            filtered_image = cv2.GaussianBlur(
-                filtered_image, (gaus_k, gaus_k), sigmaX)
+            filtered_image = cv2.GaussianBlur(filtered_image, (gaus_k, gaus_k), sigmaX)
 
             ## HSVマスク作成 ##
             hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
@@ -261,7 +258,9 @@ def main():
             )
 
             # モルフォロジーマスク適用
-            vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph).copy()
+            vis = cv2.bitwise_and(
+                filtered_image, filtered_image, mask=mask_morph
+            ).copy()
 
             # グレースケール変換
             gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
@@ -286,7 +285,7 @@ def main():
                 blob_mask[labels == i] = 255
 
                 # このラベル領域内だけで輪郭をとる
-                roi = blob_mask[y:y+h, x:x+w]
+                roi = blob_mask[y : y + h, x : x + w]
                 contours, _ = cv2.findContours(
                     roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
@@ -304,7 +303,7 @@ def main():
                     circularity = (4.0 * np.pi * area_cnt) / (peri * peri)
 
                     # 円形度チェック
-                    if circularity >= CIRC_MIN:  
+                    if circularity >= CIRC_MIN:
                         is_round_enough = True
 
                         if DEBUG:
@@ -328,12 +327,8 @@ def main():
                                 3,
                             )
                             # 可視化（マゼンタ円）→元のif Falseブロックでやってたのに近い
-                            cv2.circle(
-                                vis, (cx_abs, cy_abs), r_px, (255, 0, 255), 2
-                            )
-                            cv2.circle(
-                                vis, (cx_abs, cy_abs), 2, (255, 255, 0), 3
-                            )
+                            cv2.circle(vis, (cx_abs, cy_abs), r_px, (255, 0, 255), 2)
+                            cv2.circle(vis, (cx_abs, cy_abs), 2, (255, 255, 0), 3)
                             cv2.putText(
                                 vis,
                                 f"C:{circularity:.2f}",
@@ -368,9 +363,9 @@ def main():
                 )
 
             # 送信準備
-            state = "LOST"      # 可視化用
-            sent = False        # このフレームで送信済みか
-            valid_track = False # 本物のボールを捉えたか
+            state = "LOST"  # 可視化用
+            sent = False  # このフレームで送信済みか
+            valid_track = False  # 本物のボールを捉えたか
 
             # === 1. 円検出結果の評価 ===
             if circles is not None and len(circles[0]) > 0:
@@ -380,7 +375,6 @@ def main():
 
                 # 半径チェック（ノイズ除外用。調整してOK）
                 if 10 <= r <= 100:
-
                     if DEBUG:
                         cv2.circle(vis, (x, y), r, (0, 255, 0), 2)  # 外周(緑)
                         cv2.circle(vis, (x, y), 2, (0, 0, 255), 3)  # 中心(赤)
@@ -405,7 +399,6 @@ def main():
 
                         # 距離がありえない値（極端にデカい/NaN）なら捨てる
                         if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 3000):
-
                             # ここまで到達したら「本物のトラック」とみなす
                             valid_track = True
 
@@ -484,7 +477,8 @@ def main():
                         try:
                             ser.write(msg.encode("ascii"))
                             print(f"Sent(HOLD): {msg.strip()}")
-                        except Exception as e:
+                        except Exception:
+                            pass
                             # print("Failed to write to serial:", e)
                 else:
                     # LOST: 安全化（ゼロ送信、直前値もリセット）
