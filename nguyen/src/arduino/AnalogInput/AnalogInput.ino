@@ -12,14 +12,14 @@ int sensorValue = 0;   // センサーの値を格納する変数
 
 //  LEDを点灯させる しきい値 
 // sensorValue がこの値(0〜1023)より大きくなったらLEDが光ります。
-const int threshold = 500; 
+const int threshold = 140; 
 
 void setup() {
   // LEDピンを出力に設定
   pinMode(ledPin, OUTPUT);
   
   //  シリアルモニタを開始 (PCで値を見るため) 
-  Serial.begin(9600); 
+  Serial.begin(115200); 
 }
 
 void loop() {
