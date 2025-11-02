@@ -1,8 +1,8 @@
 {
-  "H_low": 79,
-  "S_low": 0,
-  "V_low": 73,
-  "H_high": 111,
-  "S_high": 147,
-  "V_high": 144
+  "H_low": 40,
+  "S_low": 28,
+  "V_low": 109,
+  "H_high": 93,
+  "S_high": 255,
+  "V_high": 255
 }
