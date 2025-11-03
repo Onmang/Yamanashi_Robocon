@@ -24,6 +24,8 @@ from common_function import (
     get_rgbd_images,
     PARAM_PATH_DIS,
     PARAM_PATH_HSV,
+    PARAM_PATH_DIS_D405,
+    PARAM_HOUGH_D405,
     PARAM_HOUGH,
     PARAM_FILTER
 )

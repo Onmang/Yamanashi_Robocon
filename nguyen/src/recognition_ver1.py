@@ -14,18 +14,18 @@ import pyrealsense2 as rs
 import serial
 
 from common_function import (
+    PARAM_FILTER,
+    PARAM_HOUGH_D405,
+    PARAM_PATH_DIS_D405,
+    PARAM_PATH_HSV,
     CameraParam,
     compute_angles_from_position,
     encode_angle,
     encode_distance,
+    # ガウシアンフィルター
+    load_filter_params_from_json,
     project_center_to_robot,
-    PARAM_PATH_DIS,
-    PARAM_PATH_HSV,
-    PARAM_HOUGH,
 )
-
-# パラメータ保存用のファイルパス
-PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先, ver1 用
 
 # --- 円形度ベースの円検出（Contours + Circularity） ---
 # 円形度 C = 4πA / P^2 （A: 面積, P: 周長）
@@ -61,11 +61,13 @@ def main():
     if len(args) < 2:
         print("============ Error =============================================")
         print(
-            "Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker]"
+            "Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker, 8:white, 9:blue_d405]"
         )
         print("================================================================")
         return
     hsv_param_num = int(args[1])
+    # ガウシアンフィルター
+    gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
 
     # カメラクラス
     rs_d435i = CameraParam()
@@ -116,48 +118,47 @@ def main():
 
     # ウィンドウの作成と配置
     cv2.namedWindow("Input", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("Depth Filter", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("Depth", cv2.WINDOW_NORMAL)
+    # cv2.namedWindow("Depth Filter", cv2.WINDOW_NORMAL)
+    # cv2.namedWindow("Depth", cv2.WINDOW_NORMAL)
     cv2.namedWindow("Distance Control", cv2.WINDOW_NORMAL)
     cv2.namedWindow("HSV Control", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("HSV Mask", cv2.WINDOW_NORMAL)
+    # cv2.namedWindow("HSV Mask", cv2.WINDOW_NORMAL)
     cv2.namedWindow("HSV Mask Morph", cv2.WINDOW_NORMAL)
     cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
     cv2.namedWindow("HoughCircles Control", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("Filter GUI", cv2.WINDOW_NORMAL)
+    # cv2.namedWindow("Filter GUI", cv2.WINDOW_NORMAL)
 
     # トラックバーを作成
     create_distance_trackbars("Distance Control")
-    load_params_if_exist("Distance Control", PARAM_PATH_DIS)
+    load_params_if_exist("Distance Control", PARAM_PATH_DIS_D405)
     create_hsv_trackbars("HSV Control")
     load_params_if_exist("HSV Control", PARAM_PATH_HSV[hsv_param_num])
     create_houghcircles_trackbars("HoughCircles Control")
-    load_params_if_exist("HoughCircles Control", PARAM_HOUGH)
-    create_noise_trackbars("Filter GUI")
-    load_params_if_exist("Filter GUI", PARAM_FILTER)
+    load_params_if_exist("HoughCircles Control", PARAM_HOUGH_D405)
+    # create_noise_trackbars("Filter GUI")
+    # load_params_if_exist("Filter GUI", PARAM_FILTER)
 
     # ウィンドウが重ならないように初期位置を設定
-    win_w, win_h = 450, 350  # ウィンドウサイズを小さく調整
-    offset_x = 50
-    offset_y = 50
-    cv2.moveWindow("Input", offset_x, offset_y)
-    cv2.moveWindow("Depth Filter", win_w + offset_x, offset_y)
-    cv2.moveWindow("Depth", 2 * win_w + offset_x, offset_y)
-    cv2.moveWindow("HSV Mask", offset_x, win_h + offset_y)
-    cv2.moveWindow("HSV Mask Morph", win_w + offset_x, win_h + offset_y)
-    cv2.moveWindow("Result", 2 * win_w + offset_x, win_h + offset_y)
+    # win_w, win_h = 450, 350  # ウィンドウサイズを小さく調整
+    # offset_x = 50
+    # offset_y = 50
+    # cv2.moveWindow("Input", offset_x, offset_y)
+    # cv2.moveWindow("Depth Filter", win_w + offset_x, offset_y)
+    # cv2.moveWindow("Depth", 2 * win_w + offset_x, offset_y)
+    # cv2.moveWindow("HSV Mask", offset_x, win_h + offset_y)
+    # cv2.moveWindow("HSV Mask Morph", win_w + offset_x, win_h + offset_y)
+    # cv2.moveWindow("Result", 2 * win_w + offset_x, win_h + offset_y)
 
-    cv2.moveWindow("Distance Control", 3 * win_w + offset_x, offset_y)
-    cv2.moveWindow("HSV Control", 3 * win_w + offset_x, win_h + offset_y)
-    cv2.moveWindow("HoughCircles Control", 3 * win_w + offset_x, 2 * win_h + offset_y)
-    cv2.moveWindow("Filter GUI", 2 * win_w + offset_x, 2 * win_h + offset_y)
+    # cv2.moveWindow("Distance Control", 3 * win_w + offset_x, offset_y)
+    # cv2.moveWindow("HSV Control", 3 * win_w + offset_x, win_h + offset_y)
+    # cv2.moveWindow("HoughCircles Control", 3 * win_w + offset_x, 2 * win_h + offset_y)
+    # cv2.moveWindow("Filter GUI", 2 * win_w + offset_x, 2 * win_h + offset_y)
 
     print("[Operation]: s->Save params, q/ESC->Exit")
 
     # arduino　送信設定
     mode = 1
     angle_deg = 0
-    dis = 0
 
     try:
         # 送信フラグ
@@ -240,16 +241,8 @@ def main():
                 cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET
             )
 
-            # 低ノイズ化：GUIの選択で適用
-            ftype, k, sigmaX = get_noise_params("Filter GUI")
-            # print(f"Filter: type={ftype}, k={k}, sigmaX={sigmaX}")
-            if ftype == 1:
-                filtered_image = cv2.medianBlur(filtered_image, k)
-            elif ftype == 2:
-                filtered_image = cv2.GaussianBlur(
-                    filtered_image, (k, k), sigmaX if sigmaX > 0 else 0
-                )
-            # ftype == 0 は何もしない
+            ## ガウシアンフィルター ##
+            filtered_image = cv2.GaussianBlur(filtered_image, (gaus_k, gaus_k), sigmaX)
 
             # HSV変換して色抽出
             hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
@@ -266,7 +259,9 @@ def main():
             )
 
             # 可視化（マスクをカラーに適用）
-            vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph).copy()
+            vis = cv2.bitwise_and(
+                filtered_image, filtered_image, mask=mask_morph
+            ).copy()
 
             # グレースケール変換
             gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
@@ -290,7 +285,7 @@ def main():
                 blob_mask[labels == i] = 255
 
                 # このラベル領域内だけで輪郭をとる
-                roi = blob_mask[y:y+h, x:x+w]
+                roi = blob_mask[y : y + h, x : x + w]
                 contours, _ = cv2.findContours(
                     roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
@@ -308,7 +303,7 @@ def main():
                     circularity = (4.0 * np.pi * area_cnt) / (peri * peri)
 
                     # 円形度チェック
-                    if circularity >= CIRC_MIN: 
+                    if circularity >= CIRC_MIN:
                         is_round_enough = True
 
                         # デバッグ用の可視化（今の表示は維持しつつ円形度も出す）
@@ -332,12 +327,8 @@ def main():
                         )
 
                         # 可視化（マゼンタ円）→元のif Falseブロックでやってたのに近い
-                        cv2.circle(
-                            vis, (cx_abs, cy_abs), r_px, (255, 0, 255), 2
-                        )
-                        cv2.circle(
-                            vis, (cx_abs, cy_abs), 2, (255, 255, 0), 3
-                        )
+                        cv2.circle(vis, (cx_abs, cy_abs), r_px, (255, 0, 255), 2)
+                        cv2.circle(vis, (cx_abs, cy_abs), 2, (255, 255, 0), 3)
                         cv2.putText(
                             vis,
                             f"C:{circularity:.2f}",
@@ -539,9 +530,9 @@ def main():
             # 各画像を表示
             if True:
                 cv2.imshow("Input", overlay)
-                cv2.imshow("Depth Filter", filtered_image)
-                cv2.imshow("Depth", depth_colormap)
-                cv2.imshow("HSV Mask", hsv_mask)
+                # cv2.imshow("Depth Filter", filtered_image)
+                # cv2.imshow("Depth", depth_colormap)
+                # cv2.imshow("HSV Mask", hsv_mask)
                 cv2.imshow("HSV Mask Morph", mask_morph_copy)
                 cv2.imshow("Result", vis)
 
@@ -549,12 +540,11 @@ def main():
             if k in (27, ord("q")):
                 break
             elif k == ord("s"):
-                save_params_dis(PARAM_PATH_DIS, dist_min_cm, dist_max_cm)
                 save_params_hsv(PARAM_PATH_HSV[hsv_param_num], lo, hi)
                 save_params_hough(
-                    PARAM_HOUGH, minDist, param1, param2, minRadius, maxRadius
+                    PARAM_HOUGH_D405, minDist, param1, param2, minRadius, maxRadius
                 )
-                save_noise_params(PARAM_FILTER, ftype, k, sigmaX)
+                save_params_dis(PARAM_PATH_DIS_D405, dist_min_cm, dist_max_cm)
 
     finally:
         if ARDUINO and ser is not None:

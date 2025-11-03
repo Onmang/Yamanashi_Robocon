@@ -10,18 +10,21 @@ import pyrealsense2 as rs
 # パラメータ保存用のファイルパス
 PARAM_PATH_DIS = "distance_params.json"
 PARAM_PATH_DIS_GREEN = "distance_green_params.json"
+PARAM_PATH_DIS_D405 = "distance_d405_params.json"
 PARAM_PATH_HSV = [
-    "hsv_params_red.json",
-    "hsv_params_yellow.json",
-    "hsv_params_blue.json",
-    "hsv_params_flag.json",
-    "hsv_params_green.json",
-    "hsv_params_teaground.json",
-    "hsv_params_laf.json",
-    "hsv_params_banker.json",
-    "hsv_params_white.json",  # コース２のグリーンとゴール付近
+    "hsv_params_red.json", #0
+    "hsv_params_yellow.json", #1
+    "hsv_params_blue.json", #2
+    "hsv_params_flag.json", #3
+    "hsv_params_green.json", #4
+    "hsv_params_teaground.json", #5
+    "hsv_params_laf.json", #6
+    "hsv_params_banker.json", #7
+    "hsv_params_white.json",  #8 コース２のグリーンとゴール付近
+    "hsv_params_blue_d405.json", #9
 ]  # 保存先パス選択
 PARAM_HOUGH = "houghcircles_params.json"
+PARAM_HOUGH_D405 = "houghcircles_d405_params.json"
 PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
 
 
