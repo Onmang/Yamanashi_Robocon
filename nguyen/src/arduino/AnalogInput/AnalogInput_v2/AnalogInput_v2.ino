@@ -13,8 +13,8 @@ int ledPin1 = 13;
 int ledPin2 = 12;
 int ledPin3 = 11;
 
-const int threshold_MAX = 560;
-const int threshold_ave = 430;
+const int threshold_MAX = 550;
+const int threshold_ave = 540;
 
 const int MAX_SAMPLES = 100;      // 500msで入れたい最大サンプル数
 int buf[MAX_SAMPLES];
@@ -38,13 +38,13 @@ void loop() {
     maxValue = v;
   }
 
-  if (v > 300 && sampleCount < MAX_SAMPLES) {
+  if (v > 540 && sampleCount < MAX_SAMPLES) {
     buf[sampleCount] = v;
     sampleCount++;
   }
 
   unsigned long now = millis();
-  if (now - lastMs >= 500) {
+  if (now - lastMs >= 1000) {
     int ave = 0;
     if (sampleCount > 0) {
       // 雑に平均を出す
