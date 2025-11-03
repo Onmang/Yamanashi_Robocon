@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# グリーンから経路を探す
+
+# -*- coding: utf-8 -*-
 # 実装 ver1
 # 各パラメータはjsonファイルで管理
 # 2025/11/03 カメラ変更機能追加
@@ -26,6 +29,7 @@ from common_function import (
     PARAM_PATH_HSV,
     PARAM_PATH_DIS_D405,
     PARAM_HOUGH_D405,
+    PARAM_PATH_DIS_GREEN,
     PARAM_HOUGH_D435I,
     PARAM_FILTER
 )
@@ -68,6 +72,7 @@ def main():
     teag_lo, teag_hi = load_hsv_from_json(PARAM_PATH_HSV[5])
     laf_lo, laf_hi = load_hsv_from_json(PARAM_PATH_HSV[6])
     banker_lo, banker_hi = load_hsv_from_json(PARAM_PATH_HSV[7])
+    white_lo, white_hi = load_hsv_from_json(PARAM_PATH_HSV[8])
 
     # ガウシアンフィルター
     gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
@@ -79,6 +84,7 @@ def main():
         print(f"LAF HSV lo:{laf_lo}, hi:{laf_hi}")
         print(f"Banker HSV lo:{banker_lo}, hi:{banker_hi}")
         print(f"Gaussian Filter: k={gaus_k}, sigmaX={sigmaX}")
+        print(f"White HSV lo:{white_lo}, hi:{white_hi}")
 
     # --------------------------------------------
     # カメラ初期化
@@ -101,30 +107,9 @@ def main():
             "ry_deg": 0,
             "rz_deg": 0,
         },
-        dis_param_path=PARAM_PATH_DIS_D435I,
+        dis_param_path=PARAM_PATH_DIS_GREEN,
         hough_param_path=PARAM_HOUGH_D435I,
         ball_hsv_param_path=PARAM_PATH_HSV[2],
-    )
-
-    # RealSense D405 カメラ初期化
-    # d405はcam3d
-    cam_d405 = init_realsense_camera(
-            name="d405",        
-            serial="218622274519",  # 実機のシリアル
-            width=W,
-            height=H,
-            fps=FPS,
-            extrinsic_guess={
-                "tx": 0.0,
-                "ty": 0.0,
-                "tz": 0.0,
-                "rx_deg": -90,
-                "ry_deg": 0,
-                "rz_deg": 0,
-            },
-            dis_param_path=PARAM_PATH_DIS_D405,
-            hough_param_path=PARAM_HOUGH_D405,
-            ball_hsv_param_path=PARAM_PATH_HSV[9],
     )
 
     # --------------------------------------------
@@ -228,7 +213,7 @@ def main():
             ## HSVマスク作成 ##
             hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
             hsv_mask = cv2.inRange(
-                hsv, np.array(activate_cam.ball_lo, np.uint8), np.array(activate_cam.ball_hi, np.uint8)
+                hsv, np.array(white_lo, np.uint8), np.array(white_hi, np.uint8)
             )
 
             ## モルフォロジー変換（オープニング＋クロージング）##
@@ -245,206 +230,129 @@ def main():
                 filtered_image, filtered_image, mask=mask_morph
             ).copy()
 
-            # グレースケール変換
-            gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
-
             ## ラベリング処理 ##
-            retval, labels, stats, centroids = cv2.connectedComponentsWithStats(gray)
-            mask_morph_copy = cv2.cvtColor(mask_morph, cv2.COLOR_GRAY2BGR)
-
-            # 円形度良いものだけ抜き出す
-            candidate_mask = np.zeros_like(mask_morph)  # ここに有望な領域だけ塗る
-
-            for i in range(1, retval):  # 0は背景なのでスキップ
-                x, y, w, h, area = stats[i]
-                cx, cy = int(centroids[i][0]), int(centroids[i][1])
-
-                # 面積フィルタ（元のまま）
-                if area < AREA_MIN:
-                    continue
-
-                # このラベルだけ取り出すマスクを作る
-                blob_mask = np.zeros_like(mask_morph)
-                blob_mask[labels == i] = 255
-
-                # このラベル領域内だけで輪郭をとる
-                roi = blob_mask[y : y + h, x : x + w]
-                contours, _ = cv2.findContours(
-                    roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-                )
-
-                is_round_enough = False  # フラグ
-                for cnt in contours:
-                    area_cnt = cv2.contourArea(cnt)
-                    if area_cnt <= 0:  # 一応
-                        continue
-
-                    peri = cv2.arcLength(cnt, True)
-                    if peri <= 0:
-                        continue
-
-                    circularity = (4.0 * np.pi * area_cnt) / (peri * peri)
-
-                    # 円形度チェック
-                    if circularity >= CIRC_MIN:
-                        is_round_enough = True
-
-                        if DEBUG:
-                            # デバッグ用の可視化（今の表示は維持しつつ円形度も出す）
-                            (cx_f, cy_f), r_f = cv2.minEnclosingCircle(cnt)
-                            cx_abs = int(cx_f) + x
-                            cy_abs = int(cy_f) + y
-                            r_px = int(r_f)
-
-                            cv2.rectangle(
-                                mask_morph_copy, (x, y), (x + w, y + h), (255, 0, 0), 2
-                            )
-                            cv2.circle(mask_morph_copy, (cx, cy), 3, (0, 255, 255), -1)
-                            cv2.putText(
-                                mask_morph_copy,
-                                f"[{i}]:{area} C:{circularity:.2f}",
-                                (cx + 25, cy - 5),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                1,
-                                (0, 255, 0),
-                                3,
-                            )
-                            # 可視化（マゼンタ円）→元のif Falseブロックでやってたのに近い
-                            cv2.circle(vis, (cx_abs, cy_abs), r_px, (255, 0, 255), 2)
-                            cv2.circle(vis, (cx_abs, cy_abs), 2, (255, 255, 0), 3)
-                            cv2.putText(
-                                vis,
-                                f"C:{circularity:.2f}",
-                                (cx_abs + 30, cy_abs + 30),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.7,
-                                (255, 0, 255),
-                                2,
-                                cv2.LINE_AA,
-                            )
-
-                        # 輪郭が1個でも十分丸いなら、そのラベルを候補にする
-                        break
-
-                # 丸いと判断できたラベル領域だけ candidate_mask に追加
-                if is_round_enough:
-                    candidate_mask[labels == i] = 255
-
-            # 丸いと判断された領域だけ残した画像を作る
-            if np.count_nonzero(candidate_mask) > 0:
-                gray_for_hough = cv2.bitwise_and(gray, gray, mask=candidate_mask)
-
-                circles = cv2.HoughCircles(
-                    gray_for_hough,
-                    cv2.HOUGH_GRADIENT,
-                    dp=1,
-                    minDist=activate_cam.minDist,
-                    param1=activate_cam.param1,
-                    param2=activate_cam.param2,
-                    minRadius=activate_cam.minRadius,
-                    maxRadius=activate_cam.maxRadius,
-                )
+            retval, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_morph)
+            # mask_morph は 0/255 の2値
+            cx_l, cy_l, area_l, bbox = largest_component_centroid(
+                retval, labels, stats, centroids, area_min=AREA_MIN
+            )
 
             # 送信準備
             state = "LOST"  # 可視化用
             sent = False  # このフレームで送信済みか
 
-            # === 1. 円検出結果の評価 ===
-            if circles is not None and len(circles[0]) > 0:
-                # 最初の円だけ使う
-                i = np.uint16(np.around(circles))[0][0]
-                x, y, r = int(i[0]), int(i[1]), int(i[2])
+            if cx_l is not None:
+                # 可視化：BBoxと重心
+                x, y, w, h = bbox
+                u, v = int(round(cx_l)), int(round(cy_l))
+                # --- vis 側に描画 ---
+                cv2.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                cv2.drawMarker(vis, (u, v), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
+                cv2.putText(
+                    vis,
+                    f"Area:{area_l}  C:({u},{v})",
+                    (x, y - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (255, 0, 0),
+                    2,
+                )
 
-                # 半径チェック（ノイズ除外用。調整してOK）
-                if 10 <= r:
-                    if DEBUG:
-                        cv2.circle(vis, (x, y), r, (0, 255, 0), 2)  # 外周(緑)
-                        cv2.circle(vis, (x, y), 2, (0, 0, 255), 3)  # 中心(赤)
+                # 深度表示（任意）
+                depth_text = "Depth: N/A"
+                if 0 <= v < depth_image.shape[0] and 0 <= u < depth_image.shape[1]:
+                    depth_value = depth_image[v, u]
+                    depth_m = depth_value * activate_cam.depth_scale
+                    depth_text = f"{depth_m:.3f}m"
+                cv2.putText(
+                    vis,
+                    depth_text,
+                    (u + 5, v - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 0, 255),
+                    2,
+                )
 
-                    # ピクセル→3D→ロボ座標
-                    cam3d, rob3d = project_center_to_robot(
-                        u=x,
-                        v=y,
-                        depth_image=depth_image,
-                        depth_scale=activate_cam.depth_scale,
-                        intr=activate_cam.intr,
-                        T_cam2rob=activate_cam.T_cam2rob,
-                        roi=7,
+                # 3D投影 → ロボ座標
+                cam3d, rob3d = project_center_to_robot(
+                    u=u,
+                    v=v,
+                    depth_image=depth_image,
+                    depth_scale=activate_cam.depth_scale,
+                    intr=activate_cam.intr,
+                    T_cam2rob=activate_cam.T_cam2rob,
+                    roi=7,
+                )
+
+                if cam3d is not None:
+                    Xc, Yc, Zc = cam3d
+                    Xr, Yr, Zr = rob3d
+
+                    # 距離・角度
+                    dist_rob = round(np.sqrt(Xr**2 + Yr**2) * 1000)  # [mm]
+                    angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
+
+                    # 平滑化
+                    angle_deg = round(
+                        EMA_ALPHA * angle_deg_raw + (1 - EMA_ALPHA) * prev_angle
+                    )
+                    dist_mm = round(EMA_ALPHA * dist_rob + (1 - EMA_ALPHA) * prev_dist)
+
+                    # 更新
+                    prev_angle = angle_deg
+                    prev_dist = dist_mm
+                    miss_count = 0
+                    state = "TRACK"
+
+                    # 表示
+                    cv2.putText(
+                        vis,
+                        f"Cam[{Xc:.3f},{Yc:.3f},{Zc:.3f}]m",
+                        (u - 100, v + 60),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (255, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        vis,
+                        f"Rob[{Xr:.3f},{Yr:.3f},{Zr:.3f}]m",
+                        (u - 100, v + 95),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        vis,
+                        f"D_rob:{dist_mm}mm",
+                        (u - 100, v + 130),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 255, 0),
+                        2,
+                    )
+                    cv2.putText(
+                        vis,
+                        f"Angle:{angle_deg}deg",
+                        (u - 100, v + 165),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 255, 0),
+                        2,
                     )
 
-                    if cam3d is not None:
-                        Xc, Yc, Zc = cam3d
-                        Xr, Yr, Zr = rob3d
-
-                        # ロボ座標での水平距離[mm]
-                        dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
-
-                        # 距離がありえない値（極端にデカい/NaN）なら捨てる
-                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 4000):
-
-                            # 角度[deg] ロボ+Y基準
-                            angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
-
-                            # === EMA平滑化 ===
-                            angle_deg = round(
-                                EMA_ALPHA * angle_deg_raw + (1 - EMA_ALPHA) * prev_angle
-                            )
-                            dist_mm_raw = round(dist_rob_mm)
-                            dist_mm = round(
-                                EMA_ALPHA * dist_mm_raw + (1 - EMA_ALPHA) * prev_dist
-                            )
-
-                            # [TEST]しきい値以内なら 0 距離を送る
-                            dist_mm_thresh = 170  # mm D405の閾値
-                            dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
-
-                            # 前回値更新
-                            prev_angle = angle_deg
-                            prev_dist = dist_mm
-
-                            # 見失いカウンタをここでだけリセット
-                            miss_count = 0
-
-                            # 表示情報
-                            state = "TRACK"
-                            if DEBUG:
-                                tx, ty = 10, 70
-                                line_h = 40
-                                cv2.putText(
-                                    vis,
-                                    f"D_rob: {dist_mm}mm",
-                                    (tx, ty),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    1,
-                                    (0, 0, 255),
-                                    2,
-                                    cv2.LINE_AA,
-                                )
-                                cv2.putText(
-                                    vis,
-                                    f"Angle: {angle_deg}deg",
-                                    (tx, ty + line_h),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    1,
-                                    (0, 255, 0),
-                                    2,
-                                    cv2.LINE_AA,
-                                )
-
-                            # シリアル送信
-                            if ARDUINO:
-                                angle_code = encode_angle(angle_deg)
-                                dist_code = encode_distance(1, dist_mm_send)
-                                msg = f"{mode}{angle_code}{dist_code}\n"
-                                try:
-                                    ser.write(msg.encode("ascii"))
-                                    # print(f"Sent(TRACK): {msg.strip()}")
-                                except Exception as e:
-                                    print("Failed to write to serial:", e)
-
-                            # カメラ変更判定
-                            activate_cam = change_camera(activate_cam, cam_d435i, cam_d405, Zc * 1000, thre_d435i=CHANGE_CAMERA_THRE_D435I, thre_d405=CHANGE_CAMERA_THRE_D405)
-                            sent = True  # 今フレームは送った
+                    # 送信
+                    if ARDUINO:
+                        angle_code = encode_angle(angle_deg)
+                        dist_code = encode_distance(1, dist_mm)
+                        msg = f"{mode}{angle_code}{dist_code}\n"
+                        try:
+                            ser.write(msg.encode("ascii"))
+                        except Exception as e:
+                            print("Failed to write to serial:", e)
+                    sent = True
 
             # ---- 検出なし or cam3d取得失敗 → HOLD / LOST ----
             if not sent:
@@ -494,7 +402,7 @@ def main():
                 cv2.imshow("Input", overlay)
                 # cv2.imshow("Gaussian Filter", filtered_image)
                 # cv2.imshow("HSV Mask", hsv_mask)
-                cv2.imshow("HSV Mask Morph", mask_morph_copy)
+                cv2.imshow("HSV Mask Morph", mask_morph)
                 cv2.imshow("Result", vis)
 
             k = cv2.waitKey(1) & 0xFF
@@ -505,9 +413,42 @@ def main():
         if ARDUINO and ser is not None:
             ser.close()
         cam_d435i.pipeline.stop()
-        cam_d405.pipeline.stop()
         if DEBUG:
             cv2.destroyAllWindows()
+
+
+def largest_component_centroid(retval, labels, stats, centroids, area_min=100):
+    """
+    2値画像(0/255)のラベリングから最大面積ラベルを選び、その重心を返す。
+    bin_mask: 2値画像 (0/255)
+    area_min: 面積の最小値フィルタ
+    Returns:
+        (cx, cy, area, bbox) or (None, None, 0, None)
+    """
+    if retval <= 1:
+        return None, None, 0, None  # 前景なし
+
+    # 背景(0)を除外
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    xs = stats[1:, cv2.CC_STAT_LEFT]
+    ys = stats[1:, cv2.CC_STAT_TOP]
+    ws = stats[1:, cv2.CC_STAT_WIDTH]
+    hs = stats[1:, cv2.CC_STAT_HEIGHT]
+
+    # 面積フィルタ
+    valid = areas > area_min
+    if not np.any(valid):
+        return None, None, 0, None
+
+    idx_rel = np.argmax(areas * valid)  # 有効範囲で最大
+    if not valid[idx_rel]:
+        return None, None, 0, None
+
+    idx = idx_rel + 1  # 背景分 +1
+    cx, cy = centroids[idx]
+    bbox = (int(xs[idx_rel]), int(ys[idx_rel]), int(ws[idx_rel]), int(hs[idx_rel]))
+    return float(cx), float(cy), int(areas[idx_rel]), bbox
+
 
 if __name__ == "__main__":
     main()
