@@ -2,6 +2,8 @@ void setup() {
   // シリアル通信を9600bpsで開始
   Serial.begin(115200);
   Serial.setTimeout(50); // 改行までの待ち時間（ms）
+  pinMode(13, OUTPUT);
+  digitalWrite(13,LOW);
 }
 
 void loop() {
@@ -10,8 +12,8 @@ void loop() {
   if (Serial.available() > 0) {                           
     String receivedData = Serial.readStringUntil('\n');
     receivedData.trim(); // remove CR/LF and spaces
-    Serial.print("Received Data: ");
-    Serial.println(receivedData);
+//    Serial.print("Received Data: ");
+//    Serial.prin tln(receivedData);
 
     // Total length expected 
     const int EXPECTED_LEN = 10;
@@ -44,13 +46,15 @@ void loop() {
         }
         int dis_abs = receivedData.substring(6, 10).toInt();
         int dis_val = (sign_flag_dis == 1) ? dis_abs : -dis_abs;
+//
+//        Serial.print("mode_val: ");
+//        Serial.println(mode_val);
+//        Serial.print("angle_val: ");
+//        Serial.println(angle_deg);
+//        Serial.print("dis_val: ");
+//        Serial.println(dis_val);
 
-        Serial.print("mode_val: ");
-        Serial.println(mode_val);
-        Serial.print("angle_val: ");
-        Serial.println(angle_deg);
-        Serial.print("dis_val: ");
-        Serial.println(dis_val);
+         digitalWrite(13,HIGH);
       } else {
         Serial.println("Error: Received data contains non-digit characters");
       }
@@ -60,5 +64,7 @@ void loop() {
       Serial.print(") got ");
       Serial.println(receivedData.length());
     }
+    
   }
+  digitalWrite(13,LOW);
 }

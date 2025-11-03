@@ -386,3 +386,44 @@ def load_filter_params_from_json(config_path: str) -> dict:
         sigmaX = data["sigmaX"]
 
     return k, sigmaX
+
+
+def compute_center_distance(depth_image, depth_scale, W, H, cx, cy, roi_size=10):
+    """
+    画像中心付近(roi_size x roi_size)の深度の平均値から距離を求める関数
+
+    Args:
+        depth_image (ndarray): 深度画像 (uint16など、RealSenseのZ16想定)
+        depth_scale (float): RealSenseのdepth_scale [m/1depth_unit]
+        W (int): 画像の幅
+        H (int): 画像の高さ
+        roi_size (int): 中心から取る正方形ROIの一辺ピクセル数
+
+    Returns:
+        center_dist_m (float): 中心近傍の平均距離 [m]
+        center_dist_mm (float): 中心近傍の平均距離 [mm]
+        avg_dist_raw (float): 深度の生値平均 (スケールかける前, depth単位)
+    """
+
+    # ROIの範囲（切り出しの安全ガード付き）
+    half = roi_size // 2
+    x1 = int(cx - half)
+    y1 = int(cy - half)
+    x2 = int(cx + half - 1)
+    y2 = int(cy + half - 1)
+
+    # 中心領域の切り出し
+    center_roi = depth_image[y1:y2, x1:x2]
+
+    # 深度0(=無効)を除いた平均
+    non_zero_values = center_roi[center_roi > 0]
+    if non_zero_values.size > 0:
+        avg_dist_raw = float(np.mean(non_zero_values))
+    else:
+        avg_dist_raw = 0.0
+
+    # スケール適用
+    center_dist_m = avg_dist_raw * depth_scale
+    center_dist_mm = center_dist_m * 1000.0
+
+    return center_dist_m, center_dist_mm, avg_dist_raw, (x1, y1), (x2, y2)
