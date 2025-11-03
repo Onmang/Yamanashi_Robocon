@@ -8,7 +8,7 @@ import numpy as np
 import pyrealsense2 as rs
 
 # パラメータ保存用のファイルパス
-PARAM_PATH_DIS = "distance_params.json"
+PARAM_PATH_DIS_D435I = "distance_params.json"
 PARAM_PATH_DIS_GREEN = "distance_green_params.json"
 PARAM_PATH_DIS_D405 = "distance_d405_params.json"
 PARAM_PATH_HSV = [
@@ -23,44 +23,13 @@ PARAM_PATH_HSV = [
     "hsv_params_white.json",  #8 コース２のグリーンとゴール付近
     "hsv_params_blue_d405.json", #9
 ]  # 保存先パス選択
-PARAM_HOUGH = "houghcircles_params.json"
+PARAM_HOUGH_D435I = "houghcircles_params.json"
 PARAM_HOUGH_D405 = "houghcircles_d405_params.json"
 PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
 
 
-class PositionParam:
-    """ロボット位置姿勢格納、マップ情報クラス（グローバル＝ロボット座標系）"""
-
-    def __init__(self):
-        self.goal_vector = np.array([[0.0], [0.0]])  # ロボ視点のゴール座標[m]
-        self.goal_deg = 0.0  # （必要なら）ゴール方位[deg]
-        self.robot_vector = np.array([[0.0], [0.0]])  # 常に原点（使わない）
-
-    def compute_goal_position(self, dx, dy, move_angle_deg):
-        """
-        ロボットが自分基準で (dx, dy) 平行移動し、+move_angle_deg 回転したとき、
-        ロボ視点（=グローバル）で見えるゴール座標を更新する。
-        """
-        g = self.goal_vector.copy()
-        t = np.array([[dx], [dy]], dtype=float)
-
-        # 座標系が +θ 回転 → 物体は見かけ上 −θ 回転
-        theta = np.deg2rad(-move_angle_deg)
-        R_neg = np.array(
-            [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]
-        )
-
-        # 先に平行移動を引き、その後に −θ で回転
-        #   g_{t+1} = R(-θ) @ ( g_t - t )
-        self.goal_vector = R_neg @ (g - t)
-
-        # 角度も座標系回転の逆で更新したいなら（任意）
-        self.goal_deg = (self.goal_deg - move_angle_deg) % 360.0
-
-
 class CameraParam:
     """カメラパラメータ格納クラス"""
-
     def __init__(self):
         self.intr = None  # pyrealsense2.intrinsics オブジェクト
         self.fx = 0
@@ -69,7 +38,14 @@ class CameraParam:
         self.ppy = 0
         self.depth_scale = 0  # デフォルト値
         self.stereo_baseline = 0  # デフォルト値
+        self.dist_min_cm = 0  # フィルター距離下限 [cm]
+        self.dist_max_cm = 4000  # フィルター距離上限 [cm]
         self.T_cam2rob = np.eye(4)  # カメラ→ロボット座標変換行列（4x4同次行列）
+        self.minDist=0
+        self.param1=0
+        self.param2=0
+        self.minRadius=0
+        self.maxRadius=0
 
     def add_ins_param(self, intr):
         self.intr = intr
@@ -107,7 +83,20 @@ class CameraParam_ver2:
         # 深度パラメータ
         self.depth_scale = 0.0
         self.stereo_baseline = 0.0  # mm
-
+        self.minDist=0
+        self.param1=0
+        self.param2=0
+        self.minRadius=0
+        self.maxRadius=0
+        self.dist_min_cm = 0  # フィルター距離下限 [cm]
+        self.dist_max_cm = 4000  # フィルター距離上限 [cm]
+        self.dist_min_raw = 0  # フィルター距離下限 (深度画像の生値)
+        self.dist_max_raw = 0  # フィルター距離上限 (深度画像の生値)
+        
+        # hsvフィルタパラメータ
+        self.ball_lo=(0,0,0)
+        self.ball_hi=(0,0,0)
+        
         # 外部パラメータ（カメラ→ロボット）
         self.T_cam2rob = np.eye(4)
 
@@ -131,6 +120,7 @@ class CameraParam_ver2:
         )
 
     def print_info(self):
+        print(f"\n=================== CameraParam [{self.name}] info ===================")
         print(f"[{self.name}] Intrinsics: {self.intr.width}x{self.intr.height}")
         K = np.array(
             [
@@ -143,11 +133,15 @@ class CameraParam_ver2:
         print(f"[{self.name}] depth_scale = {self.depth_scale}")
         print(f"[{self.name}] baseline(mm) = {self.stereo_baseline}")
         print(f"[{self.name}] T_cam2rob =\n{self.T_cam2rob}")
+        print(f"[{self.name}] Filter distance [cm]: {self.dist_min_cm} - {self.dist_max_cm}")
+        print(f"[{self.name}] Hough params: minDist={self.minDist}, param1={self.param1}, param2={self.param2}, minRadius={self.minRadius}, maxRadius={self.maxRadius}")
+        print(f"[{self.name}] Ball HSV lo={self.ball_lo}, hi={self.ball_hi}")
+        print("===================================================================\n")
 
 
 # カメラ初期化のヘルパー関数
 def init_realsense_camera(
-    name, serial=None, width=848, height=480, fps=30, extrinsic_guess=None
+    name, serial=None, width=848, height=480, fps=30, extrinsic_guess=None, dis_param_path=None, hough_param_path=None, ball_hsv_param_path=None
 ):
     """
     name:    "front", "side" など
@@ -202,6 +196,22 @@ def init_realsense_camera(
     cam.pipeline = pipeline
     cam.profile = profile
     cam.align = align
+    
+    # 距離フィルタのデフォルト値
+    cam.dist_min_cm, cam.dist_max_cm = load_filter_distance_from_json(dis_param_path)
+    
+    # ハフ変換パラメータ読み込み
+    cam.minDist, cam.param1, cam.param2, cam.minRadius, cam.maxRadius = load_hough_params_from_json(
+        hough_param_path
+    )
+    
+    # 距離によるフィルタリングの生値計算
+    cam.dist_min_raw = int((cam.dist_min_cm / 100.0) / cam.depth_scale)
+    cam.dist_max_raw = int((cam.dist_max_cm / 100.0) / cam.depth_scale)
+    
+    # hsvフィルタパラメータ読み込み
+    cam.ball_lo, cam.ball_hi = load_hsv_from_json(ball_hsv_param_path)
+
 
     cam.print_info()
     return cam
