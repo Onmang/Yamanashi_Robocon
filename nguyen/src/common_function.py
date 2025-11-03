@@ -7,6 +7,23 @@ from pathlib import Path
 import numpy as np
 import pyrealsense2 as rs
 
+# パラメータ保存用のファイルパス
+PARAM_PATH_DIS = "distance_params.json"
+PARAM_PATH_DIS_GREEN = "distance_green_params.json"
+PARAM_PATH_HSV = [
+    "hsv_params_red.json",
+    "hsv_params_yellow.json",
+    "hsv_params_blue.json",
+    "hsv_params_flag.json",
+    "hsv_params_green.json",
+    "hsv_params_teaground.json",
+    "hsv_params_laf.json",
+    "hsv_params_banker.json",
+    "hsv_params_white.json",  # コース２のグリーンとゴール付近
+]  # 保存先パス選択
+PARAM_HOUGH = "houghcircles_params.json"
+PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
+
 
 class PositionParam:
     """ロボット位置姿勢格納、マップ情報クラス（グローバル＝ロボット座標系）"""

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 実装　ver1
+# 実装 ver1
 # 各パラメータはjsonファイルで管理
 # 2025/11/03 カメラ変更機能追加
 
@@ -21,24 +21,12 @@ from common_function import (
     project_center_to_robot,
     compute_center_distance,
     change_camera,
-    get_rgbd_images
+    get_rgbd_images,
+    PARAM_PATH_DIS,
+    PARAM_PATH_HSV,
+    PARAM_HOUGH,
+    PARAM_FILTER
 )
-
-# パラメータ保存用のファイルパス
-PARAM_PATH_DIS = "distance_params.json"
-PARAM_PATH_HSV = [
-    "hsv_params_red.json",
-    "hsv_params_yellow.json",
-    "hsv_params_blue.json",
-    "hsv_params_flag.json",
-    "hsv_params_green.json",
-    "hsv_params_teaground.json",
-    "hsv_params_laf.json",
-    "hsv_params_banker.json",
-    "hsv_params_white.json",  # コース２のグリーンとゴール付近
-]  # 保存先パス選択
-PARAM_HOUGH = "houghcircles_params.json"
-PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
 
 # debug
 DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
@@ -47,8 +35,6 @@ AREA_MIN = 100  # 小ノイズ除去
 AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
 CHANGE_CAMERA_THRE_D435I = 350 # mm
 CHANGE_CAMERA_THRE_D405 = 550 # mm
-
-
 
 # arduino シリアル通信設定
 ARDUINO = True
@@ -419,7 +405,7 @@ def main():
                             )
 
                             # [TEST]しきい値以内なら 0 距離を送る
-                            dist_mm_thresh = 100  # mm D405の閾値
+                            dist_mm_thresh = 170  # mm D405の閾値
                             dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
 
                             # 前回値更新
