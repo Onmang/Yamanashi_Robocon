@@ -36,14 +36,14 @@ PARAM_HOUGH = "houghcircles_params.json"
 PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
 
 # debug
-DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
 
 
 # arduino シリアル通信設定
-ARDUINO = True
+ARDUINO = False 
 if ARDUINO:
     global ser
 
