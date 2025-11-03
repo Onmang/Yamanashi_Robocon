@@ -22,11 +22,11 @@ from common_function import (
     compute_center_distance,
     change_camera,
     get_rgbd_images,
-    PARAM_PATH_DIS,
+    PARAM_PATH_DIS_D435I,
     PARAM_PATH_HSV,
     PARAM_PATH_DIS_D405,
     PARAM_HOUGH_D405,
-    PARAM_HOUGH,
+    PARAM_HOUGH_D435I,
     PARAM_FILTER
 )
 
@@ -34,7 +34,7 @@ from common_function import (
 DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
+# AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
 CHANGE_CAMERA_THRE_D435I = 350 # mm
 CHANGE_CAMERA_THRE_D405 = 550 # mm
 
@@ -63,35 +63,22 @@ def main():
     # パラメータ読み込み
     # --------------------------------------------
     # hsvパラメータ読み込み
-    ball_lo, ball_hi = load_hsv_from_json(PARAM_PATH_HSV[2])
     flag_lo, flag_hi = load_hsv_from_json(PARAM_PATH_HSV[3])
     green_lo, green_hi = load_hsv_from_json(PARAM_PATH_HSV[4])
     teag_lo, teag_hi = load_hsv_from_json(PARAM_PATH_HSV[5])
     laf_lo, laf_hi = load_hsv_from_json(PARAM_PATH_HSV[6])
     banker_lo, banker_hi = load_hsv_from_json(PARAM_PATH_HSV[7])
 
-    # 距離パラメータ読み込み
-    dist_min_cm, dist_max_cm = load_filter_distance_from_json(PARAM_PATH_DIS)
-
     # ガウシアンフィルター
     gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
 
-    # ハフ変換パラメータ読み込み
-    minDist, param1, param2, minRadius, maxRadius = load_hough_params_from_json(
-        PARAM_HOUGH
-    )
     if DEBUG:
-        print(f"Ball HSV lo:{ball_lo}, hi:{ball_hi}")
         print(f"Flag HSV lo:{flag_lo}, hi:{flag_hi}")
         print(f"Green HSV lo:{green_lo}, hi:{green_hi}")
         print(f"Teag HSV lo:{teag_lo}, hi:{teag_hi}")
         print(f"LAF HSV lo:{laf_lo}, hi:{laf_hi}")
         print(f"Banker HSV lo:{banker_lo}, hi:{banker_hi}")
         print(f"Gaussian Filter: k={gaus_k}, sigmaX={sigmaX}")
-        print(f"Distance Filter: min={dist_min_cm}cm, max={dist_max_cm}cm")
-        print(
-            f"HoughCircles: minDist={minDist}, param1={param1}, param2={param2}, minRadius={minRadius}, maxRadius={maxRadius}"
-        )
 
     # --------------------------------------------
     # カメラ初期化
@@ -114,12 +101,14 @@ def main():
             "ry_deg": 0,
             "rz_deg": 0,
         },
+        dis_param_path=PARAM_PATH_DIS_D435I,
+        hough_param_path=PARAM_HOUGH_D435I,
+        ball_hsv_param_path=PARAM_PATH_HSV[2],
     )
 
     # RealSense D405 カメラ初期化
     # d405はcam3d
-    if True:
-        cam_d405 = init_realsense_camera(
+    cam_d405 = init_realsense_camera(
             name="d405",        
             serial="218622274519",  # 実機のシリアル
             width=W,
@@ -133,7 +122,10 @@ def main():
                 "ry_deg": 0,
                 "rz_deg": 0,
             },
-        )
+            dis_param_path=PARAM_PATH_DIS_D405,
+            hough_param_path=PARAM_HOUGH_D405,
+            ball_hsv_param_path=PARAM_PATH_HSV[9],
+    )
 
     # --------------------------------------------
     # windown関係
@@ -200,7 +192,7 @@ def main():
                     cy,
                     roi_size=20,
                 )
-                dist_text = f"Center Distance: {center_dist_m:.3f} [m] ({center_dist_m * 1000:.0f} [mm])"
+                dist_text = f"Center Distance: {center_dist_m:.3f} [m] ({center_dist_mm:.0f} [mm])"
 
                 # "input" ウィンドウ表示
                 overlay = color_image.copy()
@@ -224,12 +216,8 @@ def main():
                         thickness=1,
                     )
 
-            ## 距離によるフィルタリング ##
-            dist_min_raw = (dist_min_cm / 100.0) / activate_cam.depth_scale
-            dist_max_raw = (dist_max_cm / 100.0) / activate_cam.depth_scale
-
             # 指定範囲内のマスクを作成
-            mask = cv2.inRange(depth_image, int(dist_min_raw), int(dist_max_raw))
+            mask = cv2.inRange(depth_image, activate_cam.dist_min_raw, activate_cam.dist_max_raw)
 
             # マスクを適用してフィルタリング
             filtered_image = cv2.bitwise_and(color_image, color_image, mask=mask)
@@ -240,7 +228,7 @@ def main():
             ## HSVマスク作成 ##
             hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
             hsv_mask = cv2.inRange(
-                hsv, np.array(ball_lo, np.uint8), np.array(ball_hi, np.uint8)
+                hsv, np.array(activate_cam.ball_lo, np.uint8), np.array(activate_cam.ball_hi, np.uint8)
             )
 
             ## モルフォロジー変換（オープニング＋クロージング）##
@@ -272,7 +260,7 @@ def main():
                 cx, cy = int(centroids[i][0]), int(centroids[i][1])
 
                 # 面積フィルタ（元のまま）
-                if area < AREA_MIN or area > AREA_MAX:
+                if area < AREA_MIN:
                     continue
 
                 # このラベルだけ取り出すマスクを作る
@@ -350,11 +338,11 @@ def main():
                     gray_for_hough,
                     cv2.HOUGH_GRADIENT,
                     dp=1,
-                    minDist=minDist,
-                    param1=param1,
-                    param2=param2,
-                    minRadius=minRadius,
-                    maxRadius=maxRadius,
+                    minDist=activate_cam.minDist,
+                    param1=activate_cam.param1,
+                    param2=activate_cam.param2,
+                    minRadius=activate_cam.minRadius,
+                    maxRadius=activate_cam.maxRadius,
                 )
 
             # 送信準備
@@ -368,7 +356,7 @@ def main():
                 x, y, r = int(i[0]), int(i[1]), int(i[2])
 
                 # 半径チェック（ノイズ除外用。調整してOK）
-                if 10 <= r <= 100:
+                if 10 <= r:
                     if DEBUG:
                         cv2.circle(vis, (x, y), r, (0, 255, 0), 2)  # 外周(緑)
                         cv2.circle(vis, (x, y), 2, (0, 0, 255), 3)  # 中心(赤)
@@ -392,7 +380,7 @@ def main():
                         dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
                         # 距離がありえない値（極端にデカい/NaN）なら捨てる
-                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 3000):
+                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 4000):
 
                             # 角度[deg] ロボ+Y基準
                             angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
