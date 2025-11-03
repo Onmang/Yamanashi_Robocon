@@ -32,7 +32,7 @@ PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先, ver
 # 目安: 完全な円で 1.0、楕円/いびつ形で低下。0.80〜0.90 くらいが実用。
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
+AREA_MAX = 20000  # 大きすぎる塊を除外（必要に応じ調整）
 
 # Arduino接続設定
 ARDUINO = False
@@ -74,7 +74,7 @@ def main():
     cfg = rs.config()
 
     # 解像度とFPS
-    W, H, FPS = 848, 480, 30
+    W, H, FPS = 640, 480, 15
 
     # 深度とカラーのストリームを有効化
     cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16, FPS)
@@ -282,7 +282,7 @@ def main():
                 cx, cy = int(centroids[i][0]), int(centroids[i][1])
 
                 # 面積フィルタ（元のまま）
-                if area < 100 or area > 6000:
+                if area < 100:
                     continue
 
                 # このラベルだけ取り出すマスクを作る
