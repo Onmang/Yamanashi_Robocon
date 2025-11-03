@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 実装　ver1
 # 各パラメータはjsonファイルで管理
+# 2025/11/03 カメラ変更機能追加
 
 import time
 
@@ -18,6 +19,9 @@ from common_function import (
     load_hough_params_from_json,
     load_hsv_from_json,
     project_center_to_robot,
+    compute_center_distance,
+    change_camera,
+    get_rgbd_images
 )
 
 # パラメータ保存用のファイルパス
@@ -31,6 +35,7 @@ PARAM_PATH_HSV = [
     "hsv_params_teaground.json",
     "hsv_params_laf.json",
     "hsv_params_banker.json",
+    "hsv_params_white.json",  # コース２のグリーンとゴール付近
 ]  # 保存先パス選択
 PARAM_HOUGH = "houghcircles_params.json"
 PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
@@ -40,6 +45,9 @@ DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
+CHANGE_CAMERA_THRE_D435I = 350 # mm
+CHANGE_CAMERA_THRE_D405 = 550 # mm
+
 
 
 # arduino シリアル通信設定
@@ -52,7 +60,7 @@ if ARDUINO:
     ser = serial.Serial(
         serial_port,
         baud_rate,  # できれば 115200 を推奨
-        timeout=0,  # 読み取りは非ブロッキング（読みはしてないが安全）
+        timeout=1,  # 読み取りは非ブロッキング（読みはしてないが安全）
         write_timeout=0,  # 書き込みもブロッキングしない
     )
     time.sleep(2.0)  # リセット待ち 単位：sec
@@ -101,7 +109,7 @@ def main():
     # カメラ初期化
     # --------------------------------------------
     # 解像度とFPS
-    W, H, FPS = 848, 480, 30
+    W, H, FPS = 640, 480, 15
 
     # RealSense D435i カメラ初期化
     cam_d435i = init_realsense_camera(
@@ -121,9 +129,10 @@ def main():
     )
 
     # RealSense D405 カメラ初期化
-    if False:
+    # d405はcam3d
+    if True:
         cam_d405 = init_realsense_camera(
-            name="d405",
+            name="d405",        
             serial="218622274519",  # 実機のシリアル
             width=W,
             height=H,
@@ -131,7 +140,7 @@ def main():
             extrinsic_guess={
                 "tx": 0.0,
                 "ty": 0.0,
-                "tz": 100 * 0.001,
+                "tz": 0.0,
                 "rx_deg": -90,
                 "ry_deg": 0,
                 "rz_deg": 0,
@@ -171,6 +180,8 @@ def main():
     # メインループ
     # --------------------------------------------
     try:
+        # アクティブカメラ
+        activate_cam = cam_d435i
         mode = 1
         # 送信フラグ
         EMA_ALPHA = 0.30  # 0.1～0.5 で調整（大きいほど追従が速い／ノイズに弱い）
@@ -185,34 +196,21 @@ def main():
         while True:
             circles = None
 
-            # Get frameset of color and depth
-            frames = cam_d435i.pipeline.wait_for_frames()
-
-            # Align the depth frame to color frame
-            aligned_frames = cam_d435i.align.process(frames)
-
-            # Get aligned frames
-            depth_frame = aligned_frames.get_depth_frame()
-            color_frame = aligned_frames.get_color_frame()
-
-            if not depth_frame or not color_frame:
-                continue
-
-            depth_image = np.asanyarray(depth_frame.get_data())
-            color_image = np.asanyarray(color_frame.get_data())
+            # get rgbd images
+            color_image, depth_image = get_rgbd_images(activate_cam)
 
             # センター距離計算
             if DEBUG:
                 # 中心座標
                 cx, cy = W // 2, H // 2
-                center_dist_m, center_dist_mm, _ = compute_center_distance(
+                center_dist_m, center_dist_mm, _ ,(x1, y1), (x2, y2) = compute_center_distance(
                     depth_image,
                     cam_d435i.depth_scale,  # ← d435iでもd405でもOK
                     W,
                     H,
                     cx,
                     cy,
-                    roi_size=10,
+                    roi_size=20,
                 )
                 dist_text = f"Center Distance: {center_dist_m:.3f} [m] ({center_dist_m * 1000:.0f} [mm])"
 
@@ -228,10 +226,19 @@ def main():
                     2,
                 )
                 cv2.drawMarker(overlay, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
+                
+                # 中心領域を矩形で表示
+                cv2.rectangle(
+                        overlay,
+                        (x1, y1),
+                        (x2, y2),
+                        color=(0, 200, 0),  # 緑枠
+                        thickness=1,
+                    )
 
             ## 距離によるフィルタリング ##
-            dist_min_raw = (dist_min_cm / 100.0) / cam_d435i.depth_scale
-            dist_max_raw = (dist_max_cm / 100.0) / cam_d435i.depth_scale
+            dist_min_raw = (dist_min_cm / 100.0) / activate_cam.depth_scale
+            dist_max_raw = (dist_max_cm / 100.0) / activate_cam.depth_scale
 
             # 指定範囲内のマスクを作成
             mask = cv2.inRange(depth_image, int(dist_min_raw), int(dist_max_raw))
@@ -365,7 +372,6 @@ def main():
             # 送信準備
             state = "LOST"  # 可視化用
             sent = False  # このフレームで送信済みか
-            valid_track = False  # 本物のボールを捉えたか
 
             # === 1. 円検出結果の評価 ===
             if circles is not None and len(circles[0]) > 0:
@@ -384,9 +390,9 @@ def main():
                         u=x,
                         v=y,
                         depth_image=depth_image,
-                        depth_scale=cam_d435i.depth_scale,
-                        intr=cam_d435i.intr,
-                        T_cam2rob=cam_d435i.T_cam2rob,
+                        depth_scale=activate_cam.depth_scale,
+                        intr=activate_cam.intr,
+                        T_cam2rob=activate_cam.T_cam2rob,
                         roi=7,
                     )
 
@@ -399,8 +405,6 @@ def main():
 
                         # 距離がありえない値（極端にデカい/NaN）なら捨てる
                         if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 3000):
-                            # ここまで到達したら「本物のトラック」とみなす
-                            valid_track = True
 
                             # 角度[deg] ロボ+Y基準
                             angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
@@ -414,8 +418,8 @@ def main():
                                 EMA_ALPHA * dist_mm_raw + (1 - EMA_ALPHA) * prev_dist
                             )
 
-                            # しきい値以内なら 0 距離を送る
-                            dist_mm_thresh = 400  # mm
+                            # [TEST]しきい値以内なら 0 距離を送る
+                            dist_mm_thresh = 100  # mm D405の閾値
                             dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
 
                             # 前回値更新
@@ -462,6 +466,8 @@ def main():
                                 except Exception as e:
                                     print("Failed to write to serial:", e)
 
+                            # カメラ変更判定
+                            activate_cam = change_camera(activate_cam, cam_d435i, cam_d405, Zc * 1000, thre_d435i=CHANGE_CAMERA_THRE_D435I, thre_d405=CHANGE_CAMERA_THRE_D405)
                             sent = True  # 今フレームは送った
 
             # ---- 検出なし or cam3d取得失敗 → HOLD / LOST ----
@@ -523,49 +529,9 @@ def main():
         if ARDUINO and ser is not None:
             ser.close()
         cam_d435i.pipeline.stop()
-        # cam_d405.pipeline.stop()
+        cam_d405.pipeline.stop()
         if DEBUG:
             cv2.destroyAllWindows()
-
-
-def compute_center_distance(depth_image, depth_scale, W, H, cx, cy, roi_size=10):
-    """
-    画像中心付近(roi_size x roi_size)の深度の平均値から距離を求める関数
-
-    Args:
-        depth_image (ndarray): 深度画像 (uint16など、RealSenseのZ16想定)
-        depth_scale (float): RealSenseのdepth_scale [m/1depth_unit]
-        W (int): 画像の幅
-        H (int): 画像の高さ
-        roi_size (int): 中心から取る正方形ROIの一辺ピクセル数
-
-    Returns:
-        center_dist_m (float): 中心近傍の平均距離 [m]
-        center_dist_mm (float): 中心近傍の平均距離 [mm]
-        avg_dist_raw (float): 深度の生値平均 (スケールかける前, depth単位)
-    """
-
-    # ROIの範囲（切り出しの安全ガード付き）
-    half = roi_size // 2
-    x1, x2 = max(0, cx - half), min(W, cx + half)
-    y1, y2 = max(0, cy - half), min(H, cy + half)
-
-    # 中心領域の切り出し
-    center_roi = depth_image[y1:y2, x1:x2]
-
-    # 深度0(=無効)を除いた平均
-    non_zero_values = center_roi[center_roi > 0]
-    if non_zero_values.size > 0:
-        avg_dist_raw = float(np.mean(non_zero_values))
-    else:
-        avg_dist_raw = 0.0
-
-    # スケール適用
-    center_dist_m = avg_dist_raw * depth_scale
-    center_dist_mm = center_dist_m * 1000.0
-
-    return center_dist_m, center_dist_mm, avg_dist_raw
-
 
 if __name__ == "__main__":
     main()
