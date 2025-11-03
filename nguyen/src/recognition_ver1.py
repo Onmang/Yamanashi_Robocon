@@ -19,22 +19,13 @@ from common_function import (
     encode_angle,
     encode_distance,
     project_center_to_robot,
+    PARAM_PATH_DIS,
+    PARAM_PATH_HSV,
+    PARAM_HOUGH,
 )
 
 # パラメータ保存用のファイルパス
-PARAM_PATH_DIS = "distance_params.json"
-PARAM_PATH_HSV = [
-    "hsv_params_red.json",
-    "hsv_params_yellow.json",
-    "hsv_params_blue.json",
-    "hsv_params_flag.json",
-    "hsv_params_green.json",
-    "hsv_params_teaground.json",
-    "hsv_params_laf.json",
-    "hsv_params_banker.json",
-]  # 保存先パス選択
-PARAM_HOUGH = "houghcircles_params.json"
-PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先
+PARAM_FILTER = "filter_params.json"  # ノイズフィルタGUIの保存先, ver1 用
 
 # --- 円形度ベースの円検出（Contours + Circularity） ---
 # 円形度 C = 4πA / P^2 （A: 面積, P: 周長）

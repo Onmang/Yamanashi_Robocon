@@ -7,6 +7,23 @@ from pathlib import Path
 import numpy as np
 import pyrealsense2 as rs
 
+# パラメータ保存用のファイルパス
+PARAM_PATH_DIS = "distance_params.json"
+PARAM_PATH_DIS_GREEN = "distance_green_params.json"
+PARAM_PATH_HSV = [
+    "hsv_params_red.json",
+    "hsv_params_yellow.json",
+    "hsv_params_blue.json",
+    "hsv_params_flag.json",
+    "hsv_params_green.json",
+    "hsv_params_teaground.json",
+    "hsv_params_laf.json",
+    "hsv_params_banker.json",
+    "hsv_params_white.json",  # コース２のグリーンとゴール付近
+]  # 保存先パス選択
+PARAM_HOUGH = "houghcircles_params.json"
+PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
+
 
 class PositionParam:
     """ロボット位置姿勢格納、マップ情報クラス（グローバル＝ロボット座標系）"""
@@ -427,3 +444,32 @@ def compute_center_distance(depth_image, depth_scale, W, H, cx, cy, roi_size=10)
     center_dist_mm = center_dist_m * 1000.0
 
     return center_dist_m, center_dist_mm, avg_dist_raw, (x1, y1), (x2, y2)
+
+def change_camera(activate_cam, cam_d435i, cam_d405, distance_mm, thre_d435i=800, thre_d405=1000):
+    if activate_cam == cam_d435i and distance_mm < thre_d435i:
+        activate_cam = cam_d405
+        # print("Switched to D405")
+    elif activate_cam == cam_d405 and distance_mm > thre_d405:
+        activate_cam = cam_d435i
+        # print("Switched to D435i")
+    return activate_cam
+
+def get_rgbd_images(activate_cam):
+        # Get frameset of color and depth
+        frames = activate_cam.pipeline.wait_for_frames()
+
+        # Align the depth frame to color frame
+        aligned_frames = activate_cam.align.process(frames)
+
+        # Get aligned frames
+        depth_frame = aligned_frames.get_depth_frame()
+        color_frame = aligned_frames.get_color_frame()
+
+        if not depth_frame or not color_frame:
+            return None, None
+
+        depth_image = np.asanyarray(depth_frame.get_data())
+        color_image = np.asanyarray(color_frame.get_data())
+        
+        return color_image, depth_image
+    
