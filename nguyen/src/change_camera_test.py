@@ -16,7 +16,7 @@ from common_function import (
     load_hough_params_from_json,
     load_hsv_from_json,
     project_center_to_robot,
-    compute_center_distance
+    compute_center_distance,
 )
 
 CHANGE_CAMERA_THRE_D435I = 350 # mm
