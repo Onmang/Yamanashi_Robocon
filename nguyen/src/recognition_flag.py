@@ -27,7 +27,7 @@ from common_function import (
     PARAM_PATH_DIS_GREEN
 )
 
-DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = True    # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
@@ -107,8 +107,8 @@ def main():
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
 
         # サイズ変更
-        w_re = 450
-        h_re = 350
+        w_re = 200
+        h_re = 150
         cv2.resizeWindow("Input", w_re, h_re)
         cv2.resizeWindow("Gaussian Filter", w_re, h_re)
         cv2.resizeWindow("HSV Mask", w_re, h_re)
