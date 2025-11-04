@@ -29,13 +29,13 @@ from common_function import (
     PARAM_FILTER
 )
 
-DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MIN_FLAG = 200 # flag用三角形最小面積
+AREA_MIN_FLAG = 150 # flag用三角形最小面積
 
 # arduino シリアル通信設定
-ARDUINO = False
+ARDUINO = True
 if ARDUINO:
     global ser
 
@@ -261,7 +261,7 @@ def main():
                     dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
                     # 範囲フィルタリング
-                    if 500 <= dist_rob_mm <= 3000:
+                    if 100 <= dist_rob_mm <= 3000:
                         valid_triangles.append(tri)
                         valid_rob3d.append(rob3d)
                         valid_dist_mm.append(dist_rob_mm)
