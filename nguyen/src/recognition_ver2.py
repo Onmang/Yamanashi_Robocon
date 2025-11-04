@@ -98,7 +98,7 @@ def main():
             "tx": -(32.5 * 0.001),
             "ty": -50 * 0.001,
             "tz": 200 * 0.001,
-            "rx_deg": -102, 
+            "rx_deg": -90, 
             "ry_deg": 0,
             "rz_deg": 0,
         },
@@ -357,7 +357,7 @@ def main():
                 x, y, r = int(i[0]), int(i[1]), int(i[2])
 
                 # 半径チェック（ノイズ除外用。調整してOK）
-                if 1 <= r:
+                if 10 <= r:
                     if DEBUG:
                         cv2.circle(vis, (x, y), r, (0, 255, 0), 2)  # 外周(緑)
                         cv2.circle(vis, (x, y), 2, (0, 0, 255), 3)  # 中心(赤)
