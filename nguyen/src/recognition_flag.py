@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # flag 認識テスト
+# 2025/11/03 とりあえず三角形検出のみ
 
 
 import cv2
@@ -20,19 +21,22 @@ from common_function import (
     compute_center_distance,
     change_camera,
     get_rgbd_images,
-    PARAM_PATH_DIS,
+    PARAM_PATH_DIS_D435I,
     PARAM_PATH_HSV,
-    PARAM_HOUGH,
-    PARAM_FILTER,
-    PARAM_PATH_DIS_GREEN
+    PARAM_PATH_DIS_D405,
+    PARAM_HOUGH_D405,
+    PARAM_HOUGH_D435I,
+    PARAM_FILTER
 )
 
+<<<<<<< HEAD
 DEBUG = True    # True: デバッグモードON, False: デバッグモードOFF
+=======
+DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
+>>>>>>> 59c5d0e1fc1c2a7aa06d9cdaf421b1cda17ce6d4
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
-CHANGE_CAMERA_THRE_D435I = 350 # mm
-CHANGE_CAMERA_THRE_D405 = 550 # mm
+AREA_MIN_FLAG = 200 # flag用三角形最小面積
 
 # arduino シリアル通信設定
 ARDUINO = False
@@ -59,25 +63,29 @@ def main():
     # パラメータ読み込み
     # --------------------------------------------
     # hsvパラメータ読み込み
-    ball_lo, ball_hi = load_hsv_from_json(PARAM_PATH_HSV[2])
     flag_lo, flag_hi = load_hsv_from_json(PARAM_PATH_HSV[3])
     green_lo, green_hi = load_hsv_from_json(PARAM_PATH_HSV[4])
     teag_lo, teag_hi = load_hsv_from_json(PARAM_PATH_HSV[5])
     laf_lo, laf_hi = load_hsv_from_json(PARAM_PATH_HSV[6])
     banker_lo, banker_hi = load_hsv_from_json(PARAM_PATH_HSV[7])
-    
-    # 距離パラメータ読み込み
-    dist_min_cm, dist_max_cm = load_filter_distance_from_json(PARAM_PATH_DIS)
 
     # ガウシアンフィルター
     gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
+
+    if DEBUG:
+        print(f"Flag HSV lo:{flag_lo}, hi:{flag_hi}")
+        print(f"Green HSV lo:{green_lo}, hi:{green_hi}")
+        print(f"Teag HSV lo:{teag_lo}, hi:{teag_hi}")
+        print(f"LAF HSV lo:{laf_lo}, hi:{laf_hi}")
+        print(f"Banker HSV lo:{banker_lo}, hi:{banker_hi}")
+        print(f"Gaussian Filter: k={gaus_k}, sigmaX={sigmaX}")
 
     # --------------------------------------------
     # カメラ初期化
     # --------------------------------------------
     # 解像度とFPS
     W, H, FPS = 640, 480, 15
-    
+
     # RealSense D435i カメラ初期化
     cam_d435i = init_realsense_camera(
         name="d435i",
@@ -93,6 +101,9 @@ def main():
             "ry_deg": 0,
             "rz_deg": 0,
         },
+        dis_param_path=PARAM_PATH_DIS_D435I,
+        hough_param_path=PARAM_HOUGH_D435I,
+        ball_hsv_param_path=PARAM_PATH_HSV[2],
     )
 
     # --------------------------------------------
@@ -160,7 +171,7 @@ def main():
                     cy,
                     roi_size=20,
                 )
-                dist_text = f"Center Distance: {center_dist_m:.3f} [m] ({center_dist_m * 1000:.0f} [mm])"
+                dist_text = f"Center Distance: {center_dist_m:.3f} [m] ({center_dist_mm * 1000:.0f} [mm])"
 
                 # "input" ウィンドウ表示
                 overlay = color_image.copy()
@@ -184,12 +195,9 @@ def main():
                         thickness=1,
                     )
                 
-            ## 距離によるフィルタリング ##
-            dist_min_raw = (dist_min_cm / 100.0) / activate_cam.depth_scale
-            dist_max_raw = (dist_max_cm / 100.0) / activate_cam.depth_scale
 
             # 指定範囲内のマスクを作成
-            mask = cv2.inRange(depth_image, int(dist_min_raw), int(dist_max_raw))
+            mask = cv2.inRange(depth_image, activate_cam.dist_min_raw, activate_cam.dist_max_raw)
 
             # マスクを適用してフィルタリング
             filtered_image = cv2.bitwise_and(color_image, color_image, mask=mask)
@@ -200,7 +208,7 @@ def main():
             ## HSVマスク作成 ##
             hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
             hsv_mask = cv2.inRange(
-                hsv, np.array(ball_lo, np.uint8), np.array(ball_hi, np.uint8)
+                hsv, np.array(flag_lo, np.uint8), np.array(flag_hi, np.uint8)
             )
 
             ## モルフォロジー変換（オープニング＋クロージング）##
@@ -217,22 +225,189 @@ def main():
                 filtered_image, filtered_image, mask=mask_morph
             ).copy()
             
-            
-            # 輪郭抽出は mask_morph を使うのが確実（vis を2値化しても可）
-            contours, _ = cv2.findContours(mask_morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # グレースケール変換
+            gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
+
+            retval, labels, stats, centroids = cv2.connectedComponentsWithStats(gray)
 
             # 三角形検出
-            triangles = detect_triangles(contours, epsilon_ratio=0.08, min_area=500)
+            triangles = detect_triangles(retval, labels, stats, area_min_label=AREA_MIN, area_min=AREA_MIN_FLAG, epsilon_ratio=0.08)
 
-            # 描画＆重心表示
-            for tri in triangles:
-                cv2.drawContours(vis, [tri], -1, (0, 0, 255), 2)   # 赤で三角形
-                M = cv2.moments(tri)
-                if M["m00"] != 0:
-                    cx, cy = int(M["m10"]/M["m00"]), int(M["m01"]/M["m00"])
-                    cv2.circle(vis, (cx, cy), 4, (0, 255, 0), -1)  # 重心
-                    cv2.putText(vis, "Tri", (cx+6, cy-6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+            valid_triangles = []
+            valid_rob3d = []   # ← rob座標を丸ごと入れる（[Xr, Yr, Zr]）
+            valid_dist_mm = [] # ← 水平距離mmをすぐ使えるように入れておく
+            
+            # 送信準備
+            state = "LOST"  # 可視化用
+            sent = False  # このフレームで送信済みか
+
+            if triangles:
+                for tri in triangles:
+                    # 重心
+                    M = cv2.moments(tri)
+                    if M["m00"] == 0:
+                        continue
+                    cx = int(M["m10"] / M["m00"])
+                    cy = int(M["m01"] / M["m00"])
+
+                    # ピクセル → カメラ/ロボ
+                    cam3d, rob3d = project_center_to_robot(
+                        u=cx,
+                        v=cy,
+                        depth_image=depth_image,
+                        depth_scale=activate_cam.depth_scale,
+                        intr=activate_cam.intr,
+                        T_cam2rob=activate_cam.T_cam2rob,
+                        roi=7,
+                    )
+                    if rob3d is None or np.any(np.isnan(rob3d)):
+                        continue
+
+                    Xr, Yr, Zr = rob3d  # [m]
+                    # ロボ座標での水平距離[mm]
+                    dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
+
+                    # 範囲フィルタリング
+                    if 500 <= dist_rob_mm <= 3000:
+                        valid_triangles.append(tri)
+                        valid_rob3d.append(rob3d)
+                        valid_dist_mm.append(dist_rob_mm)
+
+                # --- 最も近い三角形を選択して、角度・距離を計算 ---
+                if valid_rob3d:
+                    # 一番近い水平距離を持つインデックス
+                    nearest_idx = int(np.argmin(valid_dist_mm))
+                    nearest_tri = valid_triangles[nearest_idx]
+                    nearest_rob3d = valid_rob3d[nearest_idx]
                     
+                    # 旗のポール分オフセットする
+                    edge = find_vertical_edge(nearest_tri)
+                    if edge is not None:
+                        p1, p2 = edge
+                        mx = int((p1[0] + p2[0]) / 2)
+                        my = int((p1[1] + p2[1]) / 2)
+                        # この1点だけを3Dにする
+                        _, rob3d = project_center_to_robot(
+                            u=mx,
+                            v=my,
+                            depth_image=depth_image,
+                            depth_scale=activate_cam.depth_scale,
+                            intr=activate_cam.intr,
+                            T_cam2rob=activate_cam.T_cam2rob,
+                            roi=7,
+                        )
+                        Xr, Yr, _ = rob3d
+                    else:
+                        Xr, Yr, _ = nearest_rob3d
+
+                    # 角度[deg] ロボ+Y基準
+                    angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
+
+                    # === EMA平滑化 ===
+                    angle_deg = round(
+                        EMA_ALPHA * angle_deg_raw + (1 - EMA_ALPHA) * prev_angle
+                    )
+                    dist_mm_raw = round(valid_dist_mm[nearest_idx])  # もうmmになってる
+                    dist_mm = round(
+                        EMA_ALPHA * dist_mm_raw + (1 - EMA_ALPHA) * prev_dist
+                    )
+
+                    # 前回値更新
+                    prev_angle = angle_deg
+                    dist_mm_send, prev_dist = 0, 0 # ゴールを探すのは距離関係ない
+
+                    # 見失いカウンタリセット
+                    miss_count = 0
+                    state = "TRACK"
+
+                    # 可視化
+                    if DEBUG:
+                        cv2.drawContours(vis, [nearest_tri], -1, (255, 0, 255), 3)
+                        if edge is not None:
+                            # 垂直辺の中点を可視化
+                            cv2.line(vis, tuple(p1), tuple(p2), (0, 255, 255), 2)
+                            cv2.circle(vis, (mx, my), 6, (255, 0, 255), -1)
+                        else:
+                            # fallback: 重心を可視化
+                            M = cv2.moments(nearest_tri)
+                            cx = int(M["m10"] / M["m00"])
+                            cy = int(M["m01"] / M["m00"])
+                            cv2.circle(vis, (cx, cy), 6, (0, 255, 255), -1)
+                        cv2.putText(
+                            vis,
+                            f"D_rob: {dist_mm}mm",
+                            (10, 70),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1,
+                            (0, 0, 255),
+                            2,
+                            cv2.LINE_AA,
+                        )
+                        cv2.putText(
+                            vis,
+                            f"Angle: {angle_deg}deg",
+                            (10, 110),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1,
+                            (0, 255, 0),
+                            2,
+                            cv2.LINE_AA,
+                        )
+
+                    # シリアル送信
+                    sent = True  # 今フレームは送った
+                    if ARDUINO:
+                        angle_code = encode_angle(angle_deg)
+                        dist_code = encode_distance(1, dist_mm_send)
+                        msg = f"{mode}{angle_code}{dist_code}\n"
+                        try:
+                            ser.write(msg.encode("ascii"))
+                        except Exception as e:
+                            print("Failed to write to serial:", e)
+            
+            # ---- 検出なし or cam3d取得失敗 → HOLD / LOST ----
+            if not sent:        
+                miss_count += 1
+                if miss_count <= MISS_LIMIT:
+                    # HOLD: 直前値を維持して送信
+                    state = f"HOLD {miss_count}/{MISS_LIMIT}"
+                    if ARDUINO:
+                        angle_code = encode_angle(prev_angle)
+                        dist_code = encode_distance(1, prev_dist)
+                        msg = f"{mode}{angle_code}{dist_code}\n"
+                        try:
+                            ser.write(msg.encode("ascii"))
+                            print(f"Sent(HOLD): {msg.strip()}")
+                        except Exception:
+                            pass
+                            # print("Failed to write to serial:", e)
+                else:
+                    # LOST: 安全化（ゼロ送信、直前値もリセット）
+                    state = "LOST"
+                    prev_angle = 0
+                    prev_dist = 0
+                    if ARDUINO:
+                        msg = "0000000000\n"  # mode='0', angle='0000', dist='0000'
+                        try:
+                            ser.write(msg.encode("ascii"))
+                            # print(f"Sent(LOST): {msg.strip()}")
+                        except Exception as e:
+                            print("Failed to write to serial:", e)
+                            
+            # 画面左上に状態を表示（任意）
+            if DEBUG:
+                cv2.putText(
+                    vis,
+                    f"STATE: {state}",
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0, 200, 255)
+                    if "HOLD" in state
+                    else ((0, 255, 0) if state == "TRACK" else (0, 0, 255)),
+                    2,
+                )
+            
             if DEBUG:
                 cv2.imshow("Input", overlay)
                 cv2.imshow("Result", vis)
@@ -247,25 +422,78 @@ def main():
         cam_d435i.pipeline.stop()
         if DEBUG:
             cv2.destroyAllWindows()
-                
-def detect_triangles(contours, epsilon_ratio=0.1, min_area=0):
+
+def detect_triangles(retval, labels, stats, area_min_label=200, area_min=200, epsilon_ratio=0.08):
     """
-    輪郭リストから三角形を検出する関数
+    connectedComponentsWithStats() の結果から三角形を検出して返す関数。
+    描画は外で行う。
+
     Args:
-        contours (list): cv2.findContours()で得た輪郭リスト
-        epsilon_ratio (float): 輪郭近似のしきい値（arclenに対する割合）
-        min_area (float): 面積の最小値（ノイズ除去用）
+        retval (int): ラベル数（connectedComponentsWithStats の戻り値）
+        labels (ndarray): 各ピクセルのラベル番号画像
+        stats (ndarray): 各ラベルの統計情報 [x, y, w, h, area]
+        vis (ndarray): 入力画像（参照のみ）
+        area_min_label (int): 小さいラベルを除外する閾値
+        area_min (int): 三角形の最小面積
+        epsilon_ratio (float): 輪郭近似のしきい値（小さいほど形を正確に再現）
 
     Returns:
-        list: 検出された三角形の輪郭リスト
+        approx_contours (list): 三角形の輪郭リスト（各要素はN×1×2のnumpy配列）
     """
     approx_contours = []
-    for cnt in contours:
-        arclen = cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, epsilon_ratio * arclen, True)
-        if len(approx) == 3 and cv2.contourArea(approx) >= min_area:
-            approx_contours.append(approx)
+
+    for i in range(1, retval):
+        x, y, w, h, area = stats[i]
+        if area < area_min_label:
+            continue
+
+        blob_mask = np.uint8(labels == i) * 255
+        roi = blob_mask[y:y+h, x:x+w]
+        contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            arclen = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon_ratio * arclen, True)
+
+            if len(approx) == 3 and cv2.contourArea(approx) >= area_min:
+                approx[:, 0, 0] += x
+                approx[:, 0, 1] += y
+                approx_contours.append(approx)
+                break  # 1ラベルにつき1つでOK
+
     return approx_contours
+
+def find_vertical_edge(tri, vertical_ratio=0.2):
+    """
+    tri: cv2.approxPolyDPで得た三角形 (3x1x2) を想定
+    vertical_ratio: |dx| が |dy| の何割以下なら「縦」とみなすか
+    戻り値: (p1, p2) 縦に一番近い辺の2点。見つからなければ None
+    """
+    pts = tri.reshape(-1, 2)  # [[x1,y1],[x2,y2],[x3,y3]]
+    edges = [
+        (pts[0], pts[1]),
+        (pts[1], pts[2]),
+        (pts[2], pts[0]),
+    ]
+
+    best_edge = None
+    best_score = None  # 小さいほど縦
+
+    for p1, p2 in edges:
+        dx = abs(p1[0] - p2[0])
+        dy = abs(p1[1] - p2[1]) + 1e-6  # 0割り防止
+        score = dx / dy  # 0に近いほど縦
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_edge = (p1, p2)
+
+    # ここで「どのくらい縦か」をチェックしてもいい
+    # if best_score is not None and best_score < vertical_ratio:
+    #     return best_edge  # 縦っぽい
+    # else:
+    #     return None       # どれも縦っぽくない
+    return best_edge
 
 
 

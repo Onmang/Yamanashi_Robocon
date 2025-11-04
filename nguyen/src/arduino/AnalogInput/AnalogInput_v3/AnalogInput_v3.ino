@@ -12,9 +12,10 @@ int sensorPin = A0;
 int ledPin1 = 13;
 int ledPin2 = 12;
 int ledPin3 = 11;
+int i = 0;
 
-const int threshold_MAX = 550;
-const int threshold_ave = 540;
+const int threshold_MAX = 500;
+const int threshold_ave = 450;
 
 const int MAX_SAMPLES = 100;      // 500msで入れたい最大サンプル数
 int buf[MAX_SAMPLES];
@@ -38,13 +39,13 @@ void loop() {
     maxValue = v;
   }
 
-  if (v > 540 && sampleCount < MAX_SAMPLES) {
+  if (v > 420 && sampleCount < MAX_SAMPLES) {
     buf[sampleCount] = v;
     sampleCount++;
   }
 
   unsigned long now = millis();
-  if (now - lastMs >= 1000) {
+  if (now - lastMs >= 200) {
     int ave = 0;
     if (sampleCount > 0) {
       // 雑に平均を出す
@@ -54,7 +55,7 @@ void loop() {
       }
       int roughAve = sum / sampleCount;
 
-      // 平均から離れてるのを除外
+      // 平均から離れてるのを除外し再平均
       sum = 0;
       int validCount = 0;
       const int ALLOW_DIFF = 50;   // これより離れてたら外れとみなす（要調整）
@@ -83,26 +84,21 @@ void loop() {
     }
     Serial.print(" N:");   Serial.print(sampleCount);  
 
-    // 判定
-    if (maxValue > threshold_MAX + 20 && ave > threshold_ave + 40) {
-      Serial.print("  !!!");
-      digitalWrite(ledPin1, HIGH);
-      digitalWrite(ledPin2, HIGH);
-      digitalWrite(ledPin3, HIGH);
-    } else if (maxValue > threshold_MAX + 10 && ave > threshold_ave + 20) {
-      Serial.print("  !!");
-      digitalWrite(ledPin1, HIGH);
-      digitalWrite(ledPin2, HIGH);
-      digitalWrite(ledPin3, LOW);
-    } else if (maxValue > threshold_MAX && ave > threshold_ave) {
+    //認識
+    if (maxValue > threshold_MAX && ave > threshold_ave) {
       Serial.print("  !");
       digitalWrite(ledPin1, HIGH);
-      digitalWrite(ledPin2, LOW);
-      digitalWrite(ledPin3, LOW);
+      i = i+1;
     }else{
       digitalWrite(ledPin1, LOW);
       digitalWrite(ledPin2, LOW);
-      digitalWrite(ledPin3, LOW);
+      i=0;
+    }
+    //５回連続で認識したら、方向確定
+    if(i>5){
+      Serial.print("方向確定");
+      digitalWrite(ledPin1, HIGH);
+      digitalWrite(ledPin2, HIGH);
     }
 
     Serial.println();

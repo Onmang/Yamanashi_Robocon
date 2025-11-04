@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 認識バージョン１
 # パラメータ関係はd435iベースにやっている
+# 2025/11/03 d405にも対応
 
 import json
 import sys
@@ -17,12 +18,13 @@ from common_function import (
     PARAM_FILTER,
     PARAM_HOUGH_D405,
     PARAM_PATH_DIS_D405,
+    PARAM_PATH_DIS_D435I,
     PARAM_PATH_HSV,
+    PARAM_HOUGH_D435I,
     CameraParam,
     compute_angles_from_position,
     encode_angle,
     encode_distance,
-    # ガウシアンフィルター
     load_filter_params_from_json,
     project_center_to_robot,
 )
@@ -58,14 +60,25 @@ if ARDUINO:
 def main():
     # argv
     args = sys.argv
-    if len(args) < 2:
+    if len(args) < 3:
         print("============ Error =============================================")
         print(
             "Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker, 8:white, 9:blue_d405]"
         )
+        print("Example for D405 camera: python recognition_ver1.py 0 d405")
+        print("Example for D435i camera: python recognition_ver1.py 0 d435i")
         print("================================================================")
         return
     hsv_param_num = int(args[1])
+    if args[2]=="d405":
+        print("D405 mode")
+        PARAM_PATH_DIS = PARAM_PATH_DIS_D405
+        PARAM_HOUGH = PARAM_HOUGH_D405
+    elif args[2]=="d435i":
+        print("D435i mode")
+        PARAM_PATH_DIS = PARAM_PATH_DIS_D435I
+        PARAM_HOUGH = PARAM_HOUGH_D435I 
+
     # ガウシアンフィルター
     gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
 
@@ -130,29 +143,13 @@ def main():
 
     # トラックバーを作成
     create_distance_trackbars("Distance Control")
-    load_params_if_exist("Distance Control", PARAM_PATH_DIS_D405)
+    load_params_if_exist("Distance Control", PARAM_PATH_DIS)
     create_hsv_trackbars("HSV Control")
     load_params_if_exist("HSV Control", PARAM_PATH_HSV[hsv_param_num])
     create_houghcircles_trackbars("HoughCircles Control")
-    load_params_if_exist("HoughCircles Control", PARAM_HOUGH_D405)
+    load_params_if_exist("HoughCircles Control", PARAM_HOUGH)
     # create_noise_trackbars("Filter GUI")
     # load_params_if_exist("Filter GUI", PARAM_FILTER)
-
-    # ウィンドウが重ならないように初期位置を設定
-    # win_w, win_h = 450, 350  # ウィンドウサイズを小さく調整
-    # offset_x = 50
-    # offset_y = 50
-    # cv2.moveWindow("Input", offset_x, offset_y)
-    # cv2.moveWindow("Depth Filter", win_w + offset_x, offset_y)
-    # cv2.moveWindow("Depth", 2 * win_w + offset_x, offset_y)
-    # cv2.moveWindow("HSV Mask", offset_x, win_h + offset_y)
-    # cv2.moveWindow("HSV Mask Morph", win_w + offset_x, win_h + offset_y)
-    # cv2.moveWindow("Result", 2 * win_w + offset_x, win_h + offset_y)
-
-    # cv2.moveWindow("Distance Control", 3 * win_w + offset_x, offset_y)
-    # cv2.moveWindow("HSV Control", 3 * win_w + offset_x, win_h + offset_y)
-    # cv2.moveWindow("HoughCircles Control", 3 * win_w + offset_x, 2 * win_h + offset_y)
-    # cv2.moveWindow("Filter GUI", 2 * win_w + offset_x, 2 * win_h + offset_y)
 
     print("[Operation]: s->Save params, q/ESC->Exit")
 
@@ -277,7 +274,7 @@ def main():
                 cx, cy = int(centroids[i][0]), int(centroids[i][1])
 
                 # 面積フィルタ（元のまま）
-                if area < 100:
+                if area < AREA_MIN:
                     continue
 
                 # このラベルだけ取り出すマスクを作る
