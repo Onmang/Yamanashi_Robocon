@@ -6,13 +6,14 @@
  * * 変更要素：
  * 1. サンプリング周期5msでデータを取得
  * 2. 500ms間サンプルを取得し、最大値と平均値を出力
- * 3. 最大及び平均から３段階で方向の判定を行う
+ * 3. ５回連続旗検知を行うと、方向を確定
  */
-int sensorPin = A0;
+int sensorPin = A1;
 int ledPin1 = 13;
 int ledPin2 = 12;
 int ledPin3 = 11;
 int i = 0;
+unsigned long now = 0;
 
 const int threshold_MAX = 500;
 const int threshold_ave = 450;
@@ -22,6 +23,7 @@ int buf[MAX_SAMPLES];
 int sampleCount = 0;
 
 int maxValue = 0;
+int ave = 0;
 unsigned long lastMs = 0;
 
 void setup() {
@@ -44,9 +46,9 @@ void loop() {
     sampleCount++;
   }
 
-  unsigned long now = millis();
+  now = millis();
   if (now - lastMs >= 200) {
-    int ave = 0;
+    //int ave = 0;
     if (sampleCount > 0) {
       // 雑に平均を出す
       long sum = 0;
@@ -72,42 +74,43 @@ void loop() {
         ave = 0;   // 全部外れた場合
       }
     }
-
-    // 出力
-    Serial.print("MAX:"); Serial.print(maxValue);
-    if(maxValue>threshold_MAX){
-      Serial.print("*");
-    }
-    Serial.print(" AVE:"); Serial.print(ave);
-    if(ave>threshold_ave){
-      Serial.print("*");
-    }
-    Serial.print(" N:");   Serial.print(sampleCount);  
-
-    //認識
-    if (maxValue > threshold_MAX && ave > threshold_ave) {
-      Serial.print("  !");
-      digitalWrite(ledPin1, HIGH);
-      i = i+1;
-    }else{
-      digitalWrite(ledPin1, LOW);
-      digitalWrite(ledPin2, LOW);
-      i=0;
-    }
-    //５回連続で認識したら、方向確定
-    if(i>5){
-      Serial.print("方向確定");
-      digitalWrite(ledPin1, HIGH);
-      digitalWrite(ledPin2, HIGH);
-    }
-
-    Serial.println();
-
-    // 片付け
-    maxValue = 0;
-    sampleCount = 0;
-    lastMs = now;
+    //lastMs = now;
+  // 出力
+  Serial.print("MAX:"); Serial.print(maxValue);
+  if(maxValue>threshold_MAX){
+    Serial.print("*");
   }
+  Serial.print(" AVE:"); Serial.print(ave);
+  if(ave>threshold_ave){
+    Serial.print("*");
+  }
+  Serial.print(" N:");   Serial.print(sampleCount);  
+
+  //認識
+  if (maxValue > threshold_MAX && ave > threshold_ave) {
+    Serial.print("  !");
+    digitalWrite(ledPin1, HIGH);
+    i = i+1;
+  }else{
+    digitalWrite(ledPin1, LOW);
+    digitalWrite(ledPin2, LOW);
+    i=0;
+  }
+  //５回連続で認識したら、方向確定
+  if(i>5){
+    Serial.print("方向確定");
+    digitalWrite(ledPin1, HIGH);
+    digitalWrite(ledPin2, HIGH);
+  }
+
+  Serial.println();
+
+  // 片付け
+  maxValue = 0;
+  sampleCount = 0;
+  lastMs = now;
+  }
+  Serial.print("a");
 
   delay(5);
 }
