@@ -124,8 +124,8 @@ def main():
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
 
         # サイズ変更
-        w_re = 450
-        h_re = 350
+        w_re = 300
+        h_re = 250
         cv2.resizeWindow("Input", w_re, h_re)
         # cv2.resizeWindow("Gaussian Filter", w_re, h_re)
         # cv2.resizeWindow("HSV Mask", w_re, h_re)
