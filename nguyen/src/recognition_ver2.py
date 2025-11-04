@@ -37,6 +37,7 @@ AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
 CHANGE_CAMERA_THRE_D435I = 350 # mm
 CHANGE_CAMERA_THRE_D405 = 550 # mm
+STOP_DIS_D405 = 170 # mm
 
 # arduino シリアル通信設定
 ARDUINO = False 
@@ -97,7 +98,7 @@ def main():
             "tx": -(32.5 * 0.001),
             "ty": -50 * 0.001,
             "tz": 200 * 0.001,
-            "rx_deg": -103,
+            "rx_deg": -102, 
             "ry_deg": 0,
             "rz_deg": 0,
         },
@@ -139,8 +140,8 @@ def main():
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
 
         # サイズ変更
-        w_re = 450
-        h_re = 350
+        w_re = 300
+        h_re = 250
         cv2.resizeWindow("Input", w_re, h_re)
         # cv2.resizeWindow("Gaussian Filter", w_re, h_re)
         # cv2.resizeWindow("HSV Mask", w_re, h_re)
@@ -395,7 +396,7 @@ def main():
                             )
 
                             # [TEST]しきい値以内なら 0 距離を送る
-                            dist_mm_thresh = 170  # mm D405の閾値
+                            dist_mm_thresh = STOP_DIS_D405  # mm D405の閾値
                             dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
 
                             # 前回値更新

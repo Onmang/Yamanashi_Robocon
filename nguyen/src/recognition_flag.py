@@ -108,28 +108,25 @@ def main():
     if DEBUG:
         # 作成
         cv2.namedWindow("Input", cv2.WINDOW_NORMAL)
-        cv2.namedWindow("Gaussian Filter", cv2.WINDOW_NORMAL)
         cv2.namedWindow("HSV Mask", cv2.WINDOW_NORMAL)
         cv2.namedWindow("HSV Mask Morph", cv2.WINDOW_NORMAL)
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
 
         # サイズ変更
-        w_re = 200
-        h_re = 150
+        w_re = 300
+        h_re = 250
         cv2.resizeWindow("Input", w_re, h_re)
-        cv2.resizeWindow("Gaussian Filter", w_re, h_re)
         cv2.resizeWindow("HSV Mask", w_re, h_re)
         cv2.resizeWindow("HSV Mask Morph", w_re, h_re)
         cv2.resizeWindow("Result", w_re, h_re)
 
-        # 移動
-        offset_x = 50
-        offset_y = 50
-        cv2.moveWindow("Input", offset_x, offset_y)
-        cv2.moveWindow("Gaussian Filter", w_re + offset_x, offset_y)
-        cv2.moveWindow("HSV Mask", offset_x, h_re + offset_y)
-        cv2.moveWindow("HSV Mask Morph", w_re + offset_x, h_re + offset_y)
-        cv2.moveWindow("Result", 2 * w_re + offset_x, h_re + offset_y)
+        # # 移動
+        # offset_x = 50
+        # offset_y = 50
+        # cv2.moveWindow("Input", offset_x, offset_y)
+        # cv2.moveWindow("HSV Mask", offset_x, h_re + offset_y)
+        # cv2.moveWindow("HSV Mask Morph", w_re + offset_x, h_re + offset_y)
+        # cv2.moveWindow("Result", 2 * w_re + offset_x, h_re + offset_y)
     
     # --------------------------------------------
     # メインループ
@@ -383,7 +380,7 @@ def main():
                     prev_angle = 0
                     prev_dist = 0
                     if ARDUINO:
-                        msg = "0000000000\n"  # mode='0', angle='0000', dist='0000'
+                        msg = "0000500000\n"  # 左に5度回転続ける
                         try:
                             ser.write(msg.encode("ascii"))
                             # print(f"Sent(LOST): {msg.strip()}")
@@ -407,8 +404,8 @@ def main():
             if DEBUG:
                 cv2.imshow("Input", overlay)
                 cv2.imshow("Result", vis)
-                cv2.imshow("Mask", mask)
-                cv2.imshow("Mask Morph", mask_morph)
+                cv2.imshow("HSV Mask", mask)
+                cv2.imshow("HSV Mask Morph", mask_morph)
             k = cv2.waitKey(1) & 0xFF
             if k in (27, ord("q")):
                 break
