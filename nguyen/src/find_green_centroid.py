@@ -14,6 +14,10 @@ import pyrealsense2 as rs
 import serial
 
 from common_function import (
+    PARAM_FILTER,
+    PARAM_PATH_DIS_D435I,
+    PARAM_PATH_HSV,
+    PARAM_HOUGH_D435I,
     CameraParam,
     compute_angles_from_position,
     encode_angle,
@@ -22,23 +26,6 @@ from common_function import (
     project_center_to_robot,
     
 )
-
-# パラメータ保存用のファイルパス
-PARAM_PATH_DIS = "distance_params.json"
-PARAM_PATH_HSV = [
-    "hsv_params_red.json",
-    "hsv_params_yellow.json",
-    "hsv_params_blue.json",
-    "hsv_params_flag.json",
-    "hsv_params_green.json",
-    "hsv_params_teaground.json",
-    "hsv_params_laf.json",
-    "hsv_params_banker.json",
-    "hsv_params_white.json",
-]  # 保存先パス選択
-PARAM_HOUGH = "houghcircles_params.json"
-PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保存先
-
 
 # --- 円形度ベースの円検出（Contours + Circularity） ---
 # 円形度 C = 4πA / P^2 （A: 面積, P: 周長）
@@ -87,7 +74,7 @@ def main():
     cfg = rs.config()
 
     # 解像度とFPS
-    W, H, FPS = 848, 480, 30
+    W, H, FPS = 640, 480, 15
 
     # 深度とカラーのストリームを有効化
     cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16, FPS)
@@ -142,7 +129,7 @@ def main():
 
     # トラックバーを作成
     create_distance_trackbars("Distance Control")
-    load_params_if_exist("Distance Control", PARAM_PATH_DIS)
+    load_params_if_exist("Distance Control", PARAM_PATH_DIS_D435I)
     create_hsv_trackbars("HSV Control")
     load_params_if_exist("HSV Control", PARAM_PATH_HSV[hsv_param_num])
 
@@ -455,7 +442,7 @@ def main():
             if k in (27, ord("q")):
                 break
             elif k == ord("s"):
-                save_params_dis(PARAM_PATH_DIS, dist_min_cm, dist_max_cm)
+                save_params_dis(PARAM_PATH_DIS_D435I, dist_min_cm, dist_max_cm)
                 save_params_hsv(PARAM_PATH_HSV[hsv_param_num], lo, hi)
 
     finally:
