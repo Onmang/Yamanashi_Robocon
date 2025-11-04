@@ -25,9 +25,9 @@ void setup() {
   Serial.setTimeout(50);  // readStringUntilの待ち時間（ms）
 
   // takemichi servo setup
-  servoA.attach(5);   // デカサーボ
-  servoB.attach(6);  // ミニサーボ
-  servoC.attach(11);  // 角度サーボ
+  servoA.attach(11);   // デカサーボ CNC:Z
+  servoB.attach(10);  // ミニサーボ CNC:Y
+  servoC.attach(9);  // 角度サーボ
 
   servoB.write(150);
   delay(1000);
