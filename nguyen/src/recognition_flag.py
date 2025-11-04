@@ -29,11 +29,7 @@ from common_function import (
     PARAM_FILTER
 )
 
-<<<<<<< HEAD
-DEBUG = True    # True: デバッグモードON, False: デバッグモードOFF
-=======
 DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
->>>>>>> 59c5d0e1fc1c2a7aa06d9cdaf421b1cda17ce6d4
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MIN_FLAG = 200 # flag用三角形最小面積
