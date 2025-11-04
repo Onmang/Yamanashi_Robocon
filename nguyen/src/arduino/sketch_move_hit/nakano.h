@@ -58,6 +58,9 @@ volatile int angle_deg = 0;  // −180..+180 の角度誤差（＋=CCW）
 volatile int dis_val_mm = 0; // 距離誤差[mm]（＋=前進、−=後退）
 unsigned long t_next = 0;
 
+float x_cmd; 
+float y_cmd;
+
 // ----------------- ユーティリティ -----------------
 inline void pulseStep(int pin)
 {
