@@ -229,14 +229,14 @@ void loop() {
       if (maxValue > threshold_MAX && ave > threshold_ave) {
         //Serial.print("  !");
         digitalWrite(ledPin1, HIGH);
-        //i = i+1;
+        i = 1;
       }else{
         digitalWrite(ledPin1, LOW);
         digitalWrite(ledPin2, LOW);
-        x_cmd = ROT_CCW_X_SIGN * 0.10f;
-        y_cmd = ROT_CCW_Y_SIGN * (-0.10f); 
-        driveVelocity(x_cmd, y_cmd, dt);
-       // i=0;
+        //x_cmd = ROT_CCW_X_SIGN * 0.10f;
+        //y_cmd = ROT_CCW_Y_SIGN * (-0.10f); 
+        //driveVelocity(x_cmd, y_cmd, dt);
+        i=0;
       }
 
 
@@ -246,6 +246,13 @@ void loop() {
       maxValue = 0;
       sampleCount = 0;
       lastMs = now;
+      }
+
+      if(i==0){
+        x_cmd = ROT_CCW_X_SIGN * 0.10f;
+        y_cmd = ROT_CCW_Y_SIGN * (-0.10f); 
+        driveVelocity(x_cmd, y_cmd, dt);
+        delay(dt);
       }
       
       //delay(5); 
