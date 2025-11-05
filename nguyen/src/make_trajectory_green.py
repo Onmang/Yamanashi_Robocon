@@ -39,8 +39,8 @@ DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
-CHANGE_CAMERA_THRE_D435I = 350 # mm
-CHANGE_CAMERA_THRE_D405 = 550 # mm
+ALPHA_VAL = 0.8  # 安全領域のしきい値（0.0～1.0）
+
 
 # window名
 WIN_DIST  = "Distance Map"
@@ -273,7 +273,7 @@ def main():
                     if DEBUG:
                         alpha_percent = cv2.getTrackbarPos("alpha(%)", WIN_ALPHA)
                     else:
-                        alpha_percent = 80  # デフォルト値
+                        alpha_percent = ALPHA_VAL * 100  # デフォルト値
                     alpha = alpha_percent / 100.0
 
                     # 安全中心を計算
