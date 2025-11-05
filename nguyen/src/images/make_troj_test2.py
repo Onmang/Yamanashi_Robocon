@@ -71,17 +71,35 @@ def main():
 
         # --- 6. 距離変換 + α平均点 ---
         if np.count_nonzero(mask_largest) > 0:
+            vis = src.copy()
             dist = cv2.distanceTransform(mask_largest, cv2.DIST_L2, 5)
             alpha_percent = cv2.getTrackbarPos("alpha(%)", WIN_HSV)
             alpha = alpha_percent / 100.0
-            cx, cy = get_safe_center(dist, alpha)
+            
+            cx, cy, radius = get_safe_center(dist, alpha)
+            h, w = vis.shape[:2]
+            radius = int(radius)
+            radius = min(radius, int(np.hypot(w, h)))  # 過大防止
+
+            # 半円（上半分）を描く
+            cv2.ellipse(
+                vis,
+                (cx, cy),                   # 中心
+                (radius, radius),           # 半径（x, y）
+                0,                          # 回転角度
+                0, 180,                     # 開始角・終了角 [deg]
+                (0, 255, 0),                # 緑色
+                2                           # 線の太さ
+            )
+
+
+            # 結果画像に円を描画
+            cv2.circle(vis, (cx, cy), radius, (0, 255, 0), 2)  # 緑の円
             # 距離マップを可視化
             dist_norm = cv2.normalize(dist, None, 0, 255, cv2.NORM_MINMAX)
             dist_norm = dist_norm.astype(np.uint8)
             dist_color = cv2.applyColorMap(dist_norm, cv2.COLORMAP_JET)
-
-            vis = src.copy()
-
+            
             if cx != -1 and cy != -1:
                 cv2.circle(vis, (cx, cy), 6, (0,0,255), -1)
                 cv2.putText(vis, f"alpha={alpha:.2f}", (cx+5, cy-5),
@@ -135,11 +153,11 @@ def get_safe_center(dist: np.ndarray, alpha: float):
     ys, xs = np.where(safe_mask)
 
     if len(xs) == 0:
-        return -1, -1
+        return -1, -1, -1
 
     cx = int(xs.mean())
     cy = int(ys.mean())
-    return cx, cy
+    return cx, cy, dist[cy, cx]# 半径 [px]
 
 
 if __name__ == "__main__":
