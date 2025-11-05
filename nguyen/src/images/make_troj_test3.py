@@ -37,19 +37,26 @@ def get_safe_center(dist: np.ndarray, alpha: float):
 # 2点の間を step ピクセルおきにサンプルする
 # -------------------------------------------------
 def line_sample_points(p0, p1, step=3):
+    """
+    p0 から p1 までの直線を step ピクセル間隔でサンプリングし、
+    各点の (x, y) 座標を順に返すジェネレータ関数。
+    """
     x0, y0 = p0
     x1, y1 = p1
     dx = x1 - x0
     dy = y1 - y0
+    
+    # 線分の長さ（ピクセル単位）
     length = int(np.hypot(dx, dy))
     if length == 0:
-        yield x0, y0
+        yield x0, y0 # 始点と終点が同じ場合はその点のみ返す
         return
 
-    vx = dx / length
-    vy = dy / length
+    vx = dx / length  # x方向の単位ベクトル
+    vy = dy / length  # y方向の単位ベクトル
 
     for t in range(0, length + 1, step):
+        # 現在の位置を整数ピクセルに丸めて返す
         x = int(round(x0 + vx * t))
         y = int(round(y0 + vy * t))
         yield x, y
@@ -59,31 +66,66 @@ def line_sample_points(p0, p1, step=3):
 # -------------------------------------------------
 def is_path_clear_by_dist(dist_img, p_robot, p_goal,
                           step=3, min_safe_dist=5.0):
+    """
+    distanceTransform結果(dist_img)を参照し、
+    ロボット(p_robot)からゴール(p_goal)までの直線経路上に
+    min_safe_dist 未満の領域（＝障害物に近い点）があるかを判定する。
+    True = 経路が安全, False = 危険（障害物あり）
+    """
     h, w = dist_img.shape[:2]
+    # 経路上の点を step ピクセル間隔でサンプリングして調べる
     for x, y in line_sample_points(p_robot, p_goal, step=step):
         if not (0 <= x < w and 0 <= y < h):
-            continue
-        d = dist_img[y, x]
+            continue    # 画像範囲外はスキップ
+        d = dist_img[y, x]  # 障害物までの距離
         if d < min_safe_dist:
-            return False
-    return True
+            return False    # 安全距離未満の箇所があれば危険
+    return True  # すべて安全距離以上 → 経路クリア
 
 # -------------------------------------------------
-# ラインの「安全度」（最も境界に近かった距離）を返す
-#   → 大きいほど安全
+# ライン上の「最小クリアランス（境界までの最短距離）」を返す
+#   → 値が大きいほど安全、0に近いほど危険
 # -------------------------------------------------
 def line_clearance(dist_img, p_robot, p_goal, step=3):
+    """
+    distanceTransform結果(dist_img)に基づき、
+    ロボット(p_robot)からゴール(p_goal)までの直線経路上で
+    最も障害物に近かった距離（＝最小クリアランス）を求める。
+
+    Parameters
+    ----------
+    dist_img : np.ndarray
+        distanceTransform の結果（各画素の障害物までの距離）
+    p_robot : tuple[int, int]
+        ロボットの画像座標 (x, y)
+    p_goal : tuple[int, int]
+        ゴールの画像座標 (x, y)
+    step : int, optional
+        サンプリング間隔（ピクセル単位）
+
+    Returns
+    -------
+    float
+        経路上で最も小さかった距離値（大きいほど安全）
+        ※ 範囲外のみの場合は 0.0 を返す
+    """
     h, w = dist_img.shape[:2]
-    min_d = 1e9
+    min_d = 1e9  # 初期値（十分大きな数）
+
+    # 経路上を step ピクセル間隔でサンプリング
     for x, y in line_sample_points(p_robot, p_goal, step=step):
         if not (0 <= x < w and 0 <= y < h):
-            continue
-        d = dist_img[y, x]
+            continue  # 画像外は無視
+        d = dist_img[y, x]  # 現在位置の距離値
         if d < min_d:
-            min_d = d
+            min_d = d  # 最小値を更新
+
+    # 1点も有効でなければ 0.0（無効扱い）
     if min_d == 1e9:
         min_d = 0.0
+
     return min_d
+
 
 # -------------------------------------------------
 # BLOCKED のときに、ロボット中心から放射状に探索して
