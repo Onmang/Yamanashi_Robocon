@@ -56,7 +56,7 @@ if ARDUINO:
     ser = serial.Serial(
         serial_port,
         baud_rate,  # できれば 115200 を推奨
-        timeout=1,  # 読み取りは非ブロッキング（読みはしてないが安全）
+        timeout=0,  # 読み取りは非ブロッキング（読みはしてないが安全）
         write_timeout=0,  # 書き込みもブロッキングしない
     )
     time.sleep(2.0)  # リセット待ち 単位：sec
@@ -256,9 +256,6 @@ def main():
             # まずは最大ラベルからマスクを作る
             mask_largest = np.zeros_like(mask_morph)
             if retval > 1:
-                # stats の中で選んだ bbox があるので、そのラベルをもう一回探す方法もあるけど
-                # 今回は「重心の近くにあるラベル」を使うやり方にする
-                # → でも一番簡単なのは「stats の中で面積が最大のものをもう一度選ぶ」こと
                 areas = stats[1:, cv2.CC_STAT_AREA]
                 if areas.size > 0:
                     max_idx = 1 + np.argmax(areas)  # 0は背景なので +1

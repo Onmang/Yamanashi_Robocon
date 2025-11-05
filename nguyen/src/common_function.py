@@ -90,7 +90,7 @@ class CameraParam_ver2:
         self.minRadius=0
         self.maxRadius=0
         self.dist_min_cm = 0  # フィルター距離下限 [cm]
-        self.dist_max_cm = 4000  # フィルター距離上限 [cm]
+        self.dist_max_cm = 300  # フィルター距離上限 [cm]
         self.dist_min_raw = 0  # フィルター距離下限 (深度画像の生値)
         self.dist_max_raw = 0  # フィルター距離上限 (深度画像の生値)
         
@@ -538,7 +538,7 @@ def preprocess_depth_and_hsv(color_image, depth_image,
 # --------------------------------------------
 # ラベリング処理→円形度→ハフ変換
 # --------------------------------------------
-def circularity_and_hough(mask_morph, activate_cam, area_min=100, circ_min=0.80):
+def circularity_and_hough(mask_morph, vis, activate_cam, area_min=100, circ_min=0.80):
     # 初期化
     circles = None
     
@@ -591,6 +591,8 @@ def circularity_and_hough(mask_morph, activate_cam, area_min=100, circ_min=0.80)
 
         # 丸いと判断された領域だけ残した画像を作る
         if np.count_nonzero(candidate_mask) > 0:
+            # グレースケール変換
+            gray = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
             gray_for_hough = cv2.bitwise_and(gray, gray, mask=candidate_mask)
 
             circles = cv2.HoughCircles(
@@ -674,7 +676,7 @@ def evaluate_circle_detection(
 # --------------------------------------------
 # 角度・距離のEMA平滑化
 # --------------------------------------------
-def smooth_angle_distance(rob3d, ema_alpha=0.3, prev_angle=0, prev_dist=0):
+def smooth_angle_distance(rob3d, ema_alpha, prev_angle, prev_dist):
     """
     ロボット座標から角度と距離を計算し、
     過去値(prev_angle, prev_dist)とEMA平滑化して返す。
@@ -697,3 +699,456 @@ def smooth_angle_distance(rob3d, ema_alpha=0.3, prev_angle=0, prev_dist=0):
     dist_mm = round(ema_alpha * dist_mm_raw + (1 - ema_alpha) * prev_dist)
 
     return angle_deg, dist_mm
+
+
+# --------------------------------------------
+# 角度・距離のEMA平滑化
+# --------------------------------------------
+def excute_state_LOST_100(miss_count, thres_1=30, thres_2=75, thres_3=75*2):
+    # まじで見失った場合
+    lost_flag = False
+    if miss_count <= thres_1:
+        mode = 0
+        send_dis = 0
+        send_angle = 0
+    elif miss_count >= thres_2:
+        mode = 1
+        send_dis = 0
+        send_angle = -5
+    elif miss_count <= thres_3:
+        mode = 1
+        send_dis = 0
+        send_angle = 5
+    else:
+        mode = 0
+        send_dis = 0
+        send_angle = 0
+        lost_flag = True
+    return mode, send_dis, send_angle, lost_flag
+
+#--------------------------------------------
+# ラベリング処理→三角形検出
+# --------------------------------------------
+def detect_triangles(mask_morph, area_min_label=200, area_min=200, epsilon_ratio=0.08):
+    """
+    connectedComponentsWithStats() の結果から三角形を検出して返す関数。
+    描画は外で行う。
+    Returns:
+        approx_contours (list): 三角形の輪郭リスト（各要素はN×1×2のnumpy配列）
+    """
+    # 初期化
+    approx_contours = []
+
+    ## ラベリング処理 ##
+    retval, labels, stats, _ = cv2.connectedComponentsWithStats(mask_morph)
+
+    for i in range(1, retval):
+        x, y, w, h, area = stats[i]
+        if area < area_min_label:
+            continue
+
+        blob_mask = np.uint8(labels == i) * 255
+        roi = blob_mask[y:y+h, x:x+w]
+        contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            arclen = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon_ratio * arclen, True)
+
+            if len(approx) == 3 and cv2.contourArea(approx) >= area_min:
+                approx[:, 0, 0] += x
+                approx[:, 0, 1] += y
+                approx_contours.append(approx)
+                break  # 1ラベルにつき1つでOK
+
+    return approx_contours
+
+#--------------------------------------------
+# 三角形を評価
+# --------------------------------------------
+def evaluate_triangles_detection(triangles, depth_image, activate_cam, f_offset=None):
+    if not triangles:
+        return False, None, None, None
+    
+    # 初期化
+    cam3d_res = None
+    rob3d_res = None
+    recog_res = False
+    valid_triangles = []
+    valid_cam3d = [] 
+    valid_rob3d = []   # ← rob座標を丸ごと入れる（[Xr, Yr, Zr]）
+    valid_dist_mm = [] # ← 水平距離mmをすぐ使えるように入れておく
+
+    for tri in triangles:
+        # 重心
+        M = cv2.moments(tri)
+        if M["m00"] == 0:
+            continue
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+
+        # ピクセル → カメラ/ロボ
+        cam3d, rob3d = project_center_to_robot(
+            u=cx,
+            v=cy,
+            depth_image=depth_image,
+            depth_scale=activate_cam.depth_scale,
+            intr=activate_cam.intr,
+            T_cam2rob=activate_cam.T_cam2rob,
+            roi=7,
+            )
+        if rob3d is None or np.any(np.isnan(rob3d)):
+            continue
+
+        Xr, Yr, _ = rob3d  # [m]
+        # ロボ座標での水平距離[mm]
+        dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
+
+        # 範囲フィルタリング
+        if 100 < dist_rob_mm < 2500:
+            valid_triangles.append(tri)
+            valid_rob3d.append(rob3d)
+            valid_cam3d.append(cam3d)
+            valid_dist_mm.append(dist_rob_mm)
+
+    # --- 最も近い三角形を選択して、角度・距離を計算 ---
+    if valid_rob3d:
+        # 一番近い水平距離を持つインデックス
+        nearest_idx = int(np.argmin(valid_dist_mm))
+        nearest_tri = valid_triangles[nearest_idx]
+                    
+        # 旗のポール分オフセットする
+        edge = find_vertical_edge(nearest_tri)
+        if edge is not None:
+            p1, p2 = edge
+            mx = int((p1[0] + p2[0]) / 2)
+
+            # ゴール見つからないときに，オフセットを設定
+            if f_offset is not None:
+                mx += f_offset
+                
+            my = int((p1[1] + p2[1]) / 2)
+            # この1点だけを3Dにする
+            cam3d_b, rob3d_b = project_center_to_robot(
+                u=mx,
+                v=my,
+                depth_image=depth_image,
+                depth_scale=activate_cam.depth_scale,
+                intr=activate_cam.intr,
+                T_cam2rob=activate_cam.T_cam2rob,
+                roi=7,
+            )
+            cam3d_res = cam3d_b
+            rob3d_res = rob3d_b
+            recog_res = True
+        else:
+            cam3d_res = valid_cam3d[nearest_idx]
+            rob3d_res = valid_rob3d[nearest_idx]
+            recog_res = False
+    return recog_res, rob3d_res, cam3d_res, (mx, my)
+
+#--------------------------------------------
+# 旗のポールを探す
+# --------------------------------------------
+def find_vertical_edge(tri):
+    """
+    tri: cv2.approxPolyDPで得た三角形 (3x1x2) を想定
+    vertical_ratio: |dx| が |dy| の何割以下なら「縦」とみなすか
+    戻り値: (p1, p2) 縦に一番近い辺の2点。見つからなければ None
+    """
+    pts = tri.reshape(-1, 2)  # [[x1,y1],[x2,y2],[x3,y3]]
+    edges = [
+        (pts[0], pts[1]),
+        (pts[1], pts[2]),
+        (pts[2], pts[0]),
+    ]
+
+    best_edge = None
+    best_score = None  # 小さいほど縦
+
+    for p1, p2 in edges:
+        dx = abs(p1[0] - p2[0])
+        dy = abs(p1[1] - p2[1]) + 1e-6  # 0割り防止
+        score = dx / dy  # 0に近いほど縦
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_edge = (p1, p2)
+    return best_edge
+
+#--------------------------------------------
+# 経路の安全を確認
+# --------------------------------------------
+def check_path_safety(mask_morph, depth_image, activate_cam, alpha=0.8):
+    ## ラベリング処理 ##
+    retval, labels, stats, _ = cv2.connectedComponentsWithStats(mask_morph)
+
+    # まずは最大ラベルからマスクを作る
+    mask_largest = np.zeros_like(mask_morph)   
+    if retval > 1:
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        if areas.size > 0:
+            max_idx = 1 + np.argmax(areas)  # 0は背景なので +1
+            mask_largest[labels == max_idx] = 255
+
+        # 距離変換パート
+        if np.count_nonzero(mask_largest) > 0:
+            # distanceTransform (float32)
+            dist = cv2.distanceTransform(mask_largest, cv2.DIST_L2, 5)
+
+            # 安全中心を計算
+            cx_safe, cy_safe, _ = get_safe_center(dist, alpha)
+            if cx_safe != -1:
+                # 3D投影 → ロボ座標
+                cam3d, rob3d = project_center_to_robot(
+                        u=cx_safe,
+                        v=cy_safe,
+                        depth_image=depth_image,
+                        depth_scale=activate_cam.depth_scale,
+                        intr=activate_cam.intr,
+                        T_cam2rob=activate_cam.T_cam2rob,
+                        roi=7,
+                    )
+                return True, cam3d, rob3d
+    return False, None, None
+
+
+#--------------------------------------------
+# 安全中心を計算する
+# --------------------------------------------
+def get_safe_center(dist: np.ndarray, alpha: float):
+    """
+    distanceTransform結果 dist に対して、
+    境界から十分離れた領域（dist > alpha * maxVal）の重心を求める。
+
+    Parameters
+    ----------
+    dist : np.ndarray
+        cv2.distanceTransform の出力（float32）
+    alpha : float
+        最大値に対する割合 (例: 0.9 → 最大値の90%以上を安全領域とする)
+
+    Returns
+    -------
+    (cx, cy) : tuple[int, int]
+        安全領域の中心座標。領域がなければ (-1, -1) を返す。
+    """
+    # 最大値を取得
+    _, maxVal, _, _ = cv2.minMaxLoc(dist)
+
+    # 安全領域をマスク化
+    safe_mask = dist > alpha * maxVal
+    ys, xs = np.where(safe_mask)
+
+    if len(xs) == 0:
+        return -1, -1, -1
+
+    cx = int(xs.mean())
+    cy = int(ys.mean())
+    return cx, cy, dist[cy, cx]# 半径 [px]
+
+
+# -------------------------------------------------
+# 2点の間を step ピクセルおきにサンプルする
+# -------------------------------------------------
+def line_sample_points(p0, p1, step=3):
+    """
+    p0 から p1 までの直線を step ピクセル間隔でサンプリングし、
+    各点の (x, y) 座標を順に返すジェネレータ関数。
+    """
+    x0, y0 = p0
+    x1, y1 = p1
+    dx = x1 - x0
+    dy = y1 - y0
+    
+    # 線分の長さ（ピクセル単位）
+    length = int(np.hypot(dx, dy))
+    if length == 0:
+        yield x0, y0 # 始点と終点が同じ場合はその点のみ返す
+        return
+
+    vx = dx / length  # x方向の単位ベクトル
+    vy = dy / length  # y方向の単位ベクトル
+
+    for t in range(0, length + 1, step):
+        # 現在の位置を整数ピクセルに丸めて返す
+        x = int(round(x0 + vx * t))
+        y = int(round(y0 + vy * t))
+        yield x, y
+
+# -------------------------------------------------
+# distanceTransformを使って、直線上に「境界が近い場所」があるか見る
+# -------------------------------------------------
+def is_path_clear_by_dist(dist_img, p_robot, p_goal,
+                          step=3, min_safe_dist=5.0):
+    """
+    distanceTransform結果(dist_img)を参照し、
+    ロボット(p_robot)からゴール(p_goal)までの直線経路上に
+    min_safe_dist 未満の領域（＝障害物に近い点）があるかを判定する。
+    True = 経路が安全, False = 危険（障害物あり）
+    """
+    h, w = dist_img.shape[:2]
+    # 経路上の点を step ピクセル間隔でサンプリングして調べる
+    for x, y in line_sample_points(p_robot, p_goal, step=step):
+        if not (0 <= x < w and 0 <= y < h):
+            continue    # 画像範囲外はスキップ
+        d = dist_img[y, x]  # 障害物までの距離
+        if d < min_safe_dist:
+            return False    # 安全距離未満の箇所があれば危険
+    return True  # すべて安全距離以上 → 経路クリア
+
+# -------------------------------------------------
+# ライン上の「最小クリアランス（境界までの最短距離）」を返す
+#   → 値が大きいほど安全、0に近いほど危険
+# -------------------------------------------------
+def line_clearance(dist_img, p_robot, p_goal, step=3):
+    """
+    distanceTransform結果(dist_img)に基づき、
+    ロボット(p_robot)からゴール(p_goal)までの直線経路上で
+    最も障害物に近かった距離（＝最小クリアランス）を求める。
+
+    Parameters
+    ----------
+    dist_img : np.ndarray
+        distanceTransform の結果（各画素の障害物までの距離）
+    p_robot : tuple[int, int]
+        ロボットの画像座標 (x, y)
+    p_goal : tuple[int, int]
+        ゴールの画像座標 (x, y)
+    step : int, optional
+        サンプリング間隔（ピクセル単位）
+
+    Returns
+    -------
+    float
+        経路上で最も小さかった距離値（大きいほど安全）
+        ※ 範囲外のみの場合は 0.0 を返す
+    """
+    h, w = dist_img.shape[:2]
+    min_d = 1e9  # 初期値（十分大きな数）
+
+    # 経路上を step ピクセル間隔でサンプリング
+    for x, y in line_sample_points(p_robot, p_goal, step=step):
+        if not (0 <= x < w and 0 <= y < h):
+            continue  # 画像外は無視
+        d = dist_img[y, x]  # 現在位置の距離値
+        if d < min_d:
+            min_d = d  # 最小値を更新
+
+    # 1点も有効でなければ 0.0（無効扱い）
+    if min_d == 1e9:
+        min_d = 0.0
+
+    return min_d
+
+
+# -------------------------------------------------
+# BLOCKED のときに、ロボット中心から放射状に探索して
+# 一番遠くまで行ける方向を見つける
+# -------------------------------------------------
+def find_best_direction(dist_img, origin,
+                        angle_step_deg=10,
+                        ray_step_px=3,
+                        min_safe_dist=5.0):
+    h, w = dist_img.shape[:2]
+    ox, oy = origin
+
+    best_len = 0
+    best_pt = (ox, oy)
+
+    for angle_deg in range(0, 360, angle_step_deg):
+        theta = np.deg2rad(angle_deg)
+        dx = np.cos(theta)
+        dy = np.sin(theta)
+
+        length_px = 0
+        while True:
+            x = int(round(ox + dx * length_px))
+            y = int(round(oy + dy * length_px))
+
+            if not (0 <= x < w and 0 <= y < h):
+                break
+
+            d = dist_img[y, x]
+            if d < min_safe_dist:
+                break
+
+            length_px += ray_step_px
+
+        if length_px > best_len:
+            best_len = length_px
+            end_x = int(round(ox + dx * (length_px - ray_step_px)))
+            end_y = int(round(oy + dy * (length_px - ray_step_px)))
+            best_pt = (end_x, end_y)
+
+    return best_pt, best_len
+
+# -------------------------------------------------
+# goalと同じYのライン上を、横方向にサンプルして
+# 一番安全に行ける点を探す（min_safe_dist対応版）
+# -------------------------------------------------
+def find_best_horizontal(dist_img, origin, goal_y,
+                         x_step=5, step_along_line=3,
+                         min_safe_dist=10.0):
+    """
+    origin         : (x,y) ロボット位置
+    goal_y         : ゴールと同じ y（この高さで横に走査する）
+    x_step         : 横方向に何ピクセルおきにサンプルするか
+    step_along_line: ロボ→候補点 を何ピクセルおきに評価するか
+    min_safe_dist  : この距離未満の経路は除外する（安全閾値）
+    """
+    h, w = dist_img.shape[:2]
+    ox, oy = origin
+
+    best_score = -1.0
+    best_pt = (ox, goal_y)
+
+    for x in range(0, w, x_step):
+        cand = (x, goal_y)
+        # このラインの最も狭い場所の距離を評価
+        score = line_clearance(dist_img, origin, cand, step=step_along_line)
+
+        # 一定距離未満の経路はスキップ
+        if score < min_safe_dist:
+            continue
+
+        if score > best_score:
+            best_score = score
+            best_pt = cand
+
+    return best_pt, best_score
+
+# -------------------------------------------------
+# goalpath確認統合関数
+# -------------------------------------------------
+def check_goal_path(mask_morph, robot_xy=(0,0), goal_xy=(0,0), alpha=0.8):
+        ## ラベリング処理 ##
+    retval, labels, stats, _ = cv2.connectedComponentsWithStats(mask_morph)
+
+    # まずは最大ラベルからマスクを作る
+    mask_largest = np.zeros_like(mask_morph)   
+    if retval > 1:
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        if areas.size > 0:
+            max_idx = 1 + np.argmax(areas)  # 0は背景なので +1
+            mask_largest[labels == max_idx] = 255
+
+        # 距離変換パート
+        if np.count_nonzero(mask_largest) > 0:
+            # distanceTransform (float32)
+            dist = cv2.distanceTransform(mask_largest, cv2.DIST_L2, 5)
+
+            # 安全中心を計算
+            cx, cy, _ = get_safe_center(dist, alpha)
+            if cx != -1 and cy != -1:
+                # --- 経路チェック ---
+                path_clear = is_path_clear_by_dist(
+                    dist, robot_xy, goal_xy,
+                    step=3,
+                    min_safe_dist=10.0
+                )
+            return path_clear, dist
+    return False, None
+
+
+
