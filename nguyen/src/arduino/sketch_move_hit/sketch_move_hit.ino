@@ -54,9 +54,14 @@ void setup() {
   servoB.attach(10);  // ミニサーボ
   servoC.attach(9);  // 角度サーボ
 
-  servoB.write(150);
+  servoA.write(angleA);
+  delay(1500);
+  servoB.write(angleB);
+  delay(1000);
+  servoB.write(150); //ミニサーボをロック位置にセット
   delay(1000);
   servoA.write(30);
+  delay(2000);
 
   // nakano setup
   pinMode(X_STEP, OUTPUT);
@@ -157,11 +162,11 @@ void loop() {
       servoA.write(angleA);
       delay(2000);
       servoB.write(40);
-      delay(2000);
+      delay(4000);
       servoA.write(180);
-      delay(2000);
+      delay(4000);
       servoB.write(150);
-      delay(2000);
+      delay(1000);
       servoA.write(30);
       break;
     }
