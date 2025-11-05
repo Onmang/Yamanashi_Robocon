@@ -309,9 +309,9 @@ def main():
                 cv2.circle(vis, (cx, cy), 6, (0,0,255), -1)
                 cv2.putText(vis, f"alpha={alpha:.2f}", (cx+5, cy-5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
-
                 # --- ロボット位置（仮） ---
                 robot_xy = (w // 2, h - 10)
+
 
                 # --- ゴール（クリックがなければセーフセンター） ---
                 if goal_x >= 0 and goal_y >= 0:
