@@ -24,8 +24,8 @@ def main():
     cv2.namedWindow(WIN_RESULT, cv2.WINDOW_NORMAL)
 
     # HSVトラックバー
-    cv2.createTrackbar("H_low",  WIN_HSV, 0,   179, _noop)
-    cv2.createTrackbar("H_high", WIN_HSV, 179, 179, _noop)
+    cv2.createTrackbar("H_low",  WIN_HSV, 26,   179, _noop)
+    cv2.createTrackbar("H_high", WIN_HSV, 93, 179, _noop)
     cv2.createTrackbar("S_low",  WIN_HSV, 0,   255, _noop)
     cv2.createTrackbar("S_high", WIN_HSV, 255, 255, _noop)
     cv2.createTrackbar("V_low",  WIN_HSV, 0,   255, _noop)
