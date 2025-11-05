@@ -4,6 +4,7 @@
 import json
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pyrealsense2 as rs
 
@@ -486,3 +487,213 @@ def get_rgbd_images(activate_cam):
         
         return color_image, depth_image
     
+    
+# --------------------------------------------
+# 画像入力→距離マスク＋フィルター、ガウシアン、hsvマスク、モルフォロジー処理
+# --------------------------------------------
+def preprocess_depth_and_hsv(color_image, depth_image, 
+                             activate_cam, 
+                             dist_min_cm=None, dist_max_cm=None,
+                             gaus_k=7, sigmaX=0,
+                             hsv_lo=(0,0,0), hsv_hi=(179,255,255)):
+    # カメラの値利用するかどうか
+    if dist_min_cm is None or dist_max_cm is None:
+        dist_min_raw = activate_cam.dist_min_raw
+        dist_max_raw = activate_cam.dist_max_raw
+    else:
+        dist_min_raw = int((dist_min_cm / 100.0) / activate_cam.depth_scale)
+        dist_max_raw = int((dist_max_cm / 100.0) / activate_cam.depth_scale)
+    
+    # 指定範囲内のマスクを作成
+    mask = cv2.inRange(depth_image, dist_min_raw, dist_max_raw)
+    
+    # マスクを適用してフィルタリング
+    filtered_image = cv2.bitwise_and(color_image, color_image, mask=mask)
+    
+    ## ガウシアンフィルター ##
+    filtered_image = cv2.GaussianBlur(filtered_image, (gaus_k, gaus_k), sigmaX)
+
+    ## HSVマスク作成 ##
+    hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
+    hsv_mask = cv2.inRange(
+                hsv, np.array(hsv_lo, np.uint8), np.array(hsv_hi, np.uint8)
+            )
+    
+    ## モルフォロジー変換（オープニング＋クロージング）##
+    kernel = np.ones((3, 3), np.uint8)
+    mask_morph = cv2.morphologyEx(
+                hsv_mask, cv2.MORPH_OPEN, kernel, iterations=3
+            )
+    mask_morph = cv2.morphologyEx(
+                mask_morph, cv2.MORPH_CLOSE, kernel, iterations=3
+            )
+    
+                # モルフォロジーマスク適用
+    vis = cv2.bitwise_and(
+                filtered_image, filtered_image, mask=mask_morph
+            ).copy()
+    
+    return mask_morph, vis
+
+# --------------------------------------------
+# ラベリング処理→円形度→ハフ変換
+# --------------------------------------------
+def circularity_and_hough(mask_morph, activate_cam, area_min=100, circ_min=0.80):
+    # 初期化
+    circles = None
+    
+    ## ラベリング処理 ##
+    retval, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_morph)
+                    
+    # 円形度良いものだけ抜き出す
+    candidate_mask = np.zeros_like(mask_morph)  # ここに有望な領域だけ塗る
+    
+    for i in range(1, retval):  # 0は背景なのでスキップ
+        x, y, w, h, area = stats[i]
+        cx, cy = int(centroids[i][0]), int(centroids[i][1])
+
+        # 面積フィルタ（元のまま）
+        if area < area_min:
+            continue
+
+        # このラベルだけ取り出すマスクを作る
+        blob_mask = np.zeros_like(mask_morph)
+        blob_mask[labels == i] = 255
+
+        # このラベル領域内だけで輪郭をとる
+        roi = blob_mask[y : y + h, x : x + w]
+        contours, _ = cv2.findContours(
+                    roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+
+        is_round_enough = False  # フラグ
+        for cnt in contours:
+            area_cnt = cv2.contourArea(cnt)
+            if area_cnt <= 0:  # 一応
+                continue
+
+            peri = cv2.arcLength(cnt, True)
+            if peri <= 0:
+                continue     # 一応
+
+            circularity = (4.0 * np.pi * area_cnt) / (peri * peri)
+
+            # 円形度チェック
+            if circularity >= circ_min:
+                is_round_enough = True
+
+                # 輪郭が1個でも十分丸いなら、そのラベルを候補にする
+                break
+
+        # 丸いと判断できたラベル領域だけ candidate_mask に追加
+        if is_round_enough:
+            candidate_mask[labels == i] = 255
+
+        # 丸いと判断された領域だけ残した画像を作る
+        if np.count_nonzero(candidate_mask) > 0:
+            gray_for_hough = cv2.bitwise_and(gray, gray, mask=candidate_mask)
+
+            circles = cv2.HoughCircles(
+                    gray_for_hough,
+                    cv2.HOUGH_GRADIENT,
+                    dp=1,
+                    minDist=activate_cam.minDist,
+                    param1=activate_cam.param1,
+                    param2=activate_cam.param2,
+                    minRadius=activate_cam.minRadius,
+                    maxRadius=activate_cam.maxRadius,
+                )
+            
+    return circles
+
+# --------------------------------------------
+# 円検出結果の評価
+# --------------------------------------------
+def evaluate_circle_detection(
+    circles,
+    depth_image,
+    activate_cam,
+):
+    """
+    最もロボットに近く、かつ角度が小さい円を選ぶ
+
+    Args:
+        circles: cv2.HoughCirclesの出力
+        depth_image: 深度画像
+        activate_cam: カメラオブジェクト（intr, depth_scale, T_cam2robを持つ）
+    Returns:
+        (found_flag, x, y, r, cam3d, rob3d)
+            found_flag: Trueなら有効な円あり、Falseなら該当なし
+    """
+    if circles is None or len(circles[0]) == 0:
+        return False, None, None, None, None, None
+
+    best_score = float("inf")
+    best_result = None
+
+    for c in np.uint16(np.around(circles))[0, :]:
+        x, y, r = int(c[0]), int(c[1]), int(c[2])
+
+        # 半径チェック（小ノイズ除外）
+        if r < 10:
+            continue
+
+        # --- 3D座標計算 ---
+        cam3d, rob3d = project_center_to_robot(
+            u=x,
+            v=y,
+            depth_image=depth_image,
+            depth_scale=activate_cam.depth_scale,
+            intr=activate_cam.intr,
+            T_cam2rob=activate_cam.T_cam2rob,
+            roi=7,
+        )
+        if cam3d is None or rob3d is None:
+            continue
+
+        Xr, Yr, Zr = rob3d  # [m]
+        dist_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
+        if np.isnan(dist_mm) or dist_mm > 3000:
+            continue
+
+        angle_deg = abs(compute_angles_from_position(Xr, Yr))  # 正面方向に近いほど小さい
+
+        # --- スコア評価 ---
+        score = dist_mm + 5.0 * angle_deg  # 重み5.0は調整可
+
+        if score < best_score:
+            best_score = score
+            best_result = (x, y, r, cam3d, rob3d)
+
+    if best_result is not None:
+        x, y, r, cam3d, rob3d = best_result
+        return True, x, y, r, cam3d, rob3d
+    else:
+        return False, None, None, None, None, None
+
+# --------------------------------------------
+# 角度・距離のEMA平滑化
+# --------------------------------------------
+def smooth_angle_distance(rob3d, ema_alpha=0.3, prev_angle=0, prev_dist=0):
+    """
+    ロボット座標から角度と距離を計算し、
+    過去値(prev_angle, prev_dist)とEMA平滑化して返す。
+
+    Args:
+        cam3d (tuple or np.ndarray): カメラ座標 (Xc, Yc, Zc) [m]
+        rob3d (tuple or np.ndarray): ロボット座標 (Xr, Yr, Zr) [m]
+
+    """
+    Xr, Yr, _ = rob3d
+
+    # 距離[mm]
+    dist_mm_raw = round(np.sqrt(Xr**2 + Yr**2) * 1000.0)
+
+    # 角度[deg]（ロボット+Y基準）
+    angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
+
+    # === EMA平滑化 ===
+    angle_deg = round(ema_alpha * angle_deg_raw + (1 - ema_alpha) * prev_angle)
+    dist_mm = round(ema_alpha * dist_mm_raw + (1 - ema_alpha) * prev_dist)
+
+    return angle_deg, dist_mm
