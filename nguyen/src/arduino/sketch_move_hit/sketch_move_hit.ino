@@ -257,7 +257,17 @@ void loop() {
       
       //delay(5); 
       break;         
-    }  
+    } 
+
+
+
+
+    case 4: {
+     moveAbsolute((float)angle_deg, (float)dis_val_mm);
+     mode_val = 0; // 1回だけ動作して停止
+     break;
+    }
+ 
 
     default: {
       // mode_valが1でも2でもない → 何もしない（停止）
