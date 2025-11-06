@@ -48,8 +48,8 @@ void setup() {
   // シリアル開始（※コメントと実値を一致させています）
   Serial.begin(115200);
   Serial.setTimeout(50);  // readStringUntilの待ち時間（ms）
-
   // takemichi servo setup
+
   servoA.attach(11);   // デカサーボ
   servoB.attach(10);  // ミニサーボ
   servoC.attach(9);  // 角度サーボ
