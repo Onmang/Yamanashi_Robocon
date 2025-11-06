@@ -6,7 +6,7 @@ ARDUINO = True
 if ARDUINO:
     global ser
 
-    serial_port = "/dev/ttyUSB0"  # arduino UNO
+    serial_port = "/dev/ttyACM0"  # arduino UNO
     # serial_port = '/dev/ttyACM0'
     # takemichi arduino nano evry
     baud_rate = 115200  # 9600, 115200
@@ -44,7 +44,7 @@ try:
         
         
         # Example values; replace with your actual logic for mode/angle/dis
-        mode = 1
+        mode = 3
         angle = value % 1000       # 0..999
         dis = (value // 1000) % 100000  # 0..99999
 
