@@ -156,13 +156,13 @@ void loop() {
     case 2: {
       int val = (257 - dis_val_mm) / 2;
       angleA = constrain(val, 130, 0);
-
+  
       // ひとまずそのままやるならこう
       delay(1000);
       servoA.write(angleA);
       delay(2000);
       servoB.write(40);
-      delay(4000);
+      delay(4000);  
       servoA.write(180);
       delay(4000);
       servoB.write(150);
@@ -228,11 +228,11 @@ void loop() {
       //認識
       if (maxValue > threshold_MAX && ave > threshold_ave) {
         //Serial.print("  !");
-        digitalWrite(ledPin1, HIGH);
+        //digitalWrite(ledPin1, HIGH);
         i = 1;
       }else{
-        digitalWrite(ledPin1, LOW);
-        digitalWrite(ledPin2, LOW);
+        //digitalWrite(ledPin1, LOW);
+        //digitalWrite(ledPin2, LOW);
         //x_cmd = ROT_CCW_X_SIGN * 0.10f;
         //y_cmd = ROT_CCW_Y_SIGN * (-0.10f); 
         //driveVelocity(x_cmd, y_cmd, dt);
