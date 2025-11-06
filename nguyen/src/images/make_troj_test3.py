@@ -1,5 +1,9 @@
 import cv2
 import numpy as np
+import pyrealsense2 as rs
+import json
+from pathlib import Path
+
 
 IMG_PATH = "original.png"
 
@@ -68,6 +72,7 @@ def is_path_clear_by_dist(dist_img, p_robot, p_goal,
                           step=3, min_safe_dist=5.0):
     """
     distanceTransform結果(dist_img)を参照し、
+    
     ロボット(p_robot)からゴール(p_goal)までの直線経路上に
     min_safe_dist 未満の領域（＝障害物に近い点）があるかを判定する。
     True = 経路が安全, False = 危険（障害物あり）
@@ -216,15 +221,36 @@ def on_mouse(event, x, y, flags, param):
 
 def main():
     global mouse_x, mouse_y, goal_x, goal_y
+    # white_lo, white_hi = load_hsv_from_json("hsv_params_white.json")
 
-    src = cv2.imread(IMG_PATH)
-    if src is None:
-        raise FileNotFoundError(f"{IMG_PATH} が見つかりません")
+    
+    # カメラ
+    pipeline = rs.pipeline()    
+    cfg = rs.config()
+
+    # 軽めの解像度（RasPiなら 848x480/30 など推奨）
+    W, H, FPS = 640, 480, 15
+
+    # まずカラーを試す（D405はRGB8が出る）。失敗したらIRへフォールバック
+    use_color = True
+    try:
+        cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
+    except Exception as e:
+        print("Color stream enable failed, fallback to IR:", e)
+        use_color = False
+        cfg.enable_stream(rs.stream.infrared, 1, W, H, rs.format.y8, FPS)
+
+    profile = pipeline.start(cfg)
+
+
+    # src = cv2.imread(IMG_PATH)
+    # if src is None:
+    #     raise FileNotFoundError(f"{IMG_PATH} が見つかりません")
 
     # ウィンドウ設定
     cv2.namedWindow(WIN_HSV,    cv2.WINDOW_NORMAL)
-    cv2.namedWindow(WIN_MASK,   cv2.WINDOW_NORMAL)
-    cv2.namedWindow(WIN_LABEL,  cv2.WINDOW_NORMAL)
+    # cv2.namedWindow(WIN_MASK,   cv2.WINDOW_NORMAL)
+    # cv2.namedWindow(WIN_LABEL,  cv2.WINDOW_NORMAL)
     cv2.namedWindow(WIN_DIST,   cv2.WINDOW_NORMAL)
     cv2.namedWindow(WIN_RESULT, cv2.WINDOW_NORMAL)
     cv2.namedWindow(WIN_ALT,    cv2.WINDOW_NORMAL)
@@ -232,19 +258,33 @@ def main():
     cv2.setMouseCallback(WIN_RESULT, on_mouse)
 
     # HSVトラックバー
-    cv2.createTrackbar("H_low",  WIN_HSV, 26, 179, _noop)
-    cv2.createTrackbar("H_high", WIN_HSV, 93, 179, _noop)
+    cv2.createTrackbar("H_low",  WIN_HSV, 36, 179, _noop)
+    cv2.createTrackbar("H_high", WIN_HSV, 84, 179, _noop)
     cv2.createTrackbar("S_low",  WIN_HSV, 0,   255, _noop)
     cv2.createTrackbar("S_high", WIN_HSV, 255, 255, _noop)
-    cv2.createTrackbar("V_low",  WIN_HSV, 0,   255, _noop)
+    cv2.createTrackbar("V_low",  WIN_HSV, 109,   255, _noop)
     cv2.createTrackbar("V_high", WIN_HSV, 255, 255, _noop)
 
     # alphaトラックバー
     cv2.createTrackbar("alpha(%)", WIN_HSV, 90, 100, _noop)
 
     while True:
+        frames = pipeline.wait_for_frames()
+
+        if use_color:
+            frame = frames.get_color_frame()
+            if not frame:
+                continue
+            blur = np.asanyarray(frame.get_data())
+        else:
+            ir_frame = frames.get_infrared_frame(1)  # 左IR
+            if not ir_frame:
+                continue
+            ir = np.asanyarray(ir_frame.get_data())  # (H, W) uint8
+            blur = cv2.cvtColor(ir, cv2.COLOR_GRAY2BGR)
+
         # --- 1. ガウシアンぼかし ---
-        blur = cv2.GaussianBlur(src, (7,7), 0)
+        blur = cv2.GaussianBlur(blur, (7,7), 0)
 
         # --- 2. HSV変換 & 2値化 ---
         hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
@@ -265,7 +305,7 @@ def main():
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=3)
         
         # 可視化（マスクをカラーに適用）
-        vis = cv2.bitwise_and(src, src, mask=mask).copy()
+        vis = cv2.bitwise_and(blur, blur, mask=mask).copy()
 
         # --- 4. ラベリング ---
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
@@ -309,9 +349,9 @@ def main():
                 cv2.circle(vis, (cx, cy), 6, (0,0,255), -1)
                 cv2.putText(vis, f"alpha={alpha:.2f}", (cx+5, cy-5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
-
                 # --- ロボット位置（仮） ---
                 robot_xy = (w // 2, h - 10)
+
 
                 # --- ゴール（クリックがなければセーフセンター） ---
                 if goal_x >= 0 and goal_y >= 0:
@@ -382,14 +422,14 @@ def main():
 
             else:
                 dist_color = np.zeros((*mask.shape,3), np.uint8)
-                vis = src.copy()
+                vis = blur.copy()
                 alt_img = vis.copy()
                 hscan_img = vis.copy()
                 cv2.putText(vis, "No Safe Area", (20,40),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
         else:
             dist_color = np.zeros((*mask.shape,3), np.uint8)
-            vis = src.copy()
+            vis = blur.copy()
             alt_img = vis.copy()
             hscan_img = vis.copy()
             cv2.putText(vis, "No target", (20,40),
@@ -404,8 +444,8 @@ def main():
                     1)
 
         # --- 表示 ---
-        cv2.imshow(WIN_MASK, mask)
-        cv2.imshow(WIN_LABEL, label_img)
+        # cv2.imshow(WIN_MASK, mask)
+        # cv2.imshow(WIN_LABEL, label_img)
         cv2.imshow(WIN_DIST, dist_color)
         cv2.imshow(WIN_RESULT, vis)
         cv2.imshow(WIN_ALT, alt_img)
@@ -416,6 +456,45 @@ def main():
             break
 
     cv2.destroyAllWindows()
+
+
+# json から HSV 閾値を読み込む
+def load_hsv_from_json(config_path: str) -> tuple:
+    """
+    JSONファイルからHSVの閾値を読み込み、
+    下限(lo)と上限(hi)のタプルを返す
+
+    Args:
+        config_path (str): 設定ファイルのパス
+
+    Returns:
+        tuple: (lo, hi) のタプル。
+               lo = (H_low, S_low, V_low)
+               hi = (H_high, S_high, V_high)
+    """
+    p = Path(config_path)
+    default_data = {
+        "H_low": 0,
+        "S_low": 0,
+        "V_low": 0,
+        "H_high": 179,
+        "S_high": 255,
+        "V_high": 255,
+    }
+    if p.exists():
+        data = json.loads(p.read_text(encoding="utf-8"))
+    else:
+        # ファイルが存在しない場合
+        print(f"Error: {config_path} not found. Using default HSV values.")
+        data = default_data
+
+    # 辞書からタプルを作成
+    lo = (data["H_low"], data["S_low"], data["V_low"])
+    hi = (data["H_high"], data["S_high"], data["V_high"])
+
+    # 2つのタプル (lo, hi) を含むタプルを返す
+    return lo, hi
+
 
 if __name__ == "__main__":
     main()
