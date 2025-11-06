@@ -45,8 +45,7 @@ void loop() {
 
   if (risingFlag) {
     //int val = (257 - dis_val_mm) / 2;
-    //angleA = constrain(val, 130, 0);
-    
+    //angleA = constrain(val, 130, 0);   
     angleA=30;
 
     delay(1000);
