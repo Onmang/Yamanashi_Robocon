@@ -27,6 +27,7 @@ from common_function import (
     encode_distance,
     load_filter_params_from_json,
     project_center_to_robot,
+    create_homogeneous_matrix
 )
 
 # --- 円形度ベースの円検出（Contours + Circularity） ---
@@ -34,16 +35,14 @@ from common_function import (
 # 目安: 完全な円で 1.0、楕円/いびつ形で低下。0.80〜0.90 くらいが実用。
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MAX = 20000  # 大きすぎる塊を除外（必要に応じ調整）
 
 # Arduino接続設定
 ARDUINO = True
 if ARDUINO:
     global ser
 
-    serial_port = "/dev/ttyACM0"  # arduino UNO
-    # serial_port = '/dev/ttyACM0'
-    # takemichi arduino nano evry
+    # serial_port = "/dev/ttyACM0"  # arduino UNO
+    serial_port = '/dev/ttyUSB0'
     baud_rate = 115200  # 9600, 115200
     ser = serial.Serial(
         serial_port,
@@ -62,6 +61,7 @@ def main():
     args = sys.argv
     if len(args) < 3:
         print("============ Error =============================================")
+        print("Make sure that it is not connected more than 2 cameras at the same time")
         print(
             "Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker, 8:white, 9:blue_d405]"
         )
@@ -70,20 +70,29 @@ def main():
         print("================================================================")
         return
     hsv_param_num = int(args[1])
+    deg = np.deg2rad  # ← 関数オブジェクトを代入
+    T_cam2rob = None
     if args[2]=="d405":
         print("D405 mode")
         PARAM_PATH_DIS = PARAM_PATH_DIS_D405
         PARAM_HOUGH = PARAM_HOUGH_D405
+        T_cam2rob = create_homogeneous_matrix(
+             tx=0.0, ty=0.0, tz=0.0, rx=deg(-90), ry=deg(0), rz=deg(0)  # d405
+        )
     elif args[2]=="d435i":
         print("D435i mode")
         PARAM_PATH_DIS = PARAM_PATH_DIS_D435I
-        PARAM_HOUGH = PARAM_HOUGH_D435I 
+        PARAM_HOUGH = PARAM_HOUGH_D435I
+        T_cam2rob = create_homogeneous_matrix(
+            tx=-(32.5 * 0.001), ty=-50 * 0.001, tz=200 * 0.001, rx=deg(-90), ry=deg(0), rz=deg(0)  # d435i
+        )
+
 
     # ガウシアンフィルター
     gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
 
     # カメラクラス
-    rs_d435i = CameraParam()
+    rs_d435i = CameraParam(T_cam2rob)
 
     pipeline = rs.pipeline()
     cfg = rs.config()
@@ -150,6 +159,11 @@ def main():
     load_params_if_exist("HoughCircles Control", PARAM_HOUGH)
     # create_noise_trackbars("Filter GUI")
     # load_params_if_exist("Filter GUI", PARAM_FILTER)
+    
+    # サイズ変更
+    w_re = 300
+    h_re = 250
+    cv2.resizeWindow("Input", w_re, h_re)
 
     print("[Operation]: s->Save params, q/ESC->Exit")
 
@@ -416,6 +430,7 @@ def main():
                     prev_dist = dist_mm
                     miss_count = 0
                     state = "TRACK"
+                
 
                     # 表示
                     cv2.putText(

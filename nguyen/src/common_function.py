@@ -31,7 +31,7 @@ PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保�
 
 class CameraParam:
     """カメラパラメータ格納クラス"""
-    def __init__(self):
+    def __init__(self, T_mtrix):
         self.intr = None  # pyrealsense2.intrinsics オブジェクト
         self.fx = 0
         self.fy = 0
@@ -47,6 +47,7 @@ class CameraParam:
         self.param2=0
         self.minRadius=0
         self.maxRadius=0
+        self.T_cam2rob = T_mtrix
 
     def add_ins_param(self, intr):
         self.intr = intr
@@ -60,9 +61,10 @@ class CameraParam:
         # 同時変換行列, あらかじめロボット座標と決めておく,
         # 現在はカメラを水平にしている
         deg = np.deg2rad  # ← 関数オブジェクトを代入
-        self.T_cam2rob = create_homogeneous_matrix(
-            tx=-(32.5 * 0.001), ty=0, tz=110 * 0.001, rx=deg(-90), ry=deg(0), rz=deg(0)
-        )
+        # self.T_cam2rob = create_homogeneous_matrix(
+        #     # tx=-(32.5 * 0.001), ty=0, tz=110 * 0.001, rx=deg(-90), ry=deg(0), rz=deg(0)  # d435i
+        #      tx=0.0, ty=0.0, tz=0.0, rx=deg(-90), ry=deg(0), rz=deg(0)  # d405
+        # )
 
 
 class CameraParam_ver2:
@@ -333,6 +335,26 @@ def encode_distance(sign_flag=1, distance_mm=0):
     """
     dis_send = f"{sign_flag}{distance_mm % 10000:04d}"
     return dis_send
+
+def encode_distance_ver2(distance_mm=0):
+    """
+    距離を5桁文字列に変換する。
+    +1000 → '01000', -500 → '00500', 0 → '00000'
+    先頭1桁が符号(1:正, 0:負)、残り4桁が絶対値(mm)
+    """
+    # 小数が来てもよいようにいったんintにする
+    d = int(distance_mm)
+
+    if d < 0:
+        sign_flag = 0
+        d = -d  # 絶対値にする
+    else:
+        sign_flag = 1
+
+    # 4桁に収まるように（0〜9999）
+    d = d % 10000
+
+    return f"{sign_flag}{d:04d}"
 
 
 # json から HSV 閾値を読み込む
@@ -766,7 +788,7 @@ def detect_triangles(mask_morph, area_min_label=200, area_min=200, epsilon_ratio
 #--------------------------------------------
 # 三角形を評価
 # --------------------------------------------
-def evaluate_triangles_detection(triangles, depth_image, activate_cam, f_offset=None):
+def evaluate_triangles_detection(triangles, depth_image, activate_cam):
     if not triangles:
         return False, None, None, None
     
@@ -822,11 +844,6 @@ def evaluate_triangles_detection(triangles, depth_image, activate_cam, f_offset=
         if edge is not None:
             p1, p2 = edge
             mx = int((p1[0] + p2[0]) / 2)
-
-            # ゴール見つからないときに，オフセットを設定
-            if f_offset is not None:
-                mx += f_offset
-                
             my = int((p1[1] + p2[1]) / 2)
             # この1点だけを3Dにする
             cam3d_b, rob3d_b = project_center_to_robot(
