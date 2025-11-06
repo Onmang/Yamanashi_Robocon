@@ -8,6 +8,8 @@ int angleA = 180;
 int angleB = 40;
 int angleC = 105;
 
+int dis_val_mm = 0;
+
 volatile bool risingFlag = false;
 volatile bool fallingFlag = false;
 int prevState = LOW;  // 直前の状態（初期値LOW）
@@ -32,6 +34,12 @@ void setup() {
 }
 
 void loop() {
+  if (mySerial.available()) {
+  String str = mySerial.readStringUntil('\n');  // 改行まで読む
+  dis_val_mm = str.toInt();
+  Serial.print("受信データ: ");
+  Serial.println(dis_val_mm);
+  }
 
   int state = digitalRead(13);
   
@@ -44,9 +52,9 @@ void loop() {
   prevState = state; // 状態を記憶
 
   if (risingFlag) {
-    //int val = (257 - dis_val_mm) / 2;
-    //angleA = constrain(val, 130, 0);   
-    angleA=30;
+    int val = (257 - dis_val_mm) / 2;
+    angleA = constrain(val, 130, 0);   
+    //angleA=30;
 
     delay(1000);
     servoA.write(angleA);
