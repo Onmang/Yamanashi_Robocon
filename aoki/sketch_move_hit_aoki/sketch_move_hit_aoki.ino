@@ -158,12 +158,13 @@ void loop() {
     case 2: {
       /*
         パッド操作用のマイコンへ指示
-        arduino uno:11 nanoevery:2 GND共通
+        シリアル通信で距離を送信→
+        配線：uno→11 nanoevery→2 GND共通
       */
       mySerial.println(dis_val_mm);
-      digitalWrite(ledPin1, HIGH);
+      digitalWrite(state, HIGH);
       delay(2000);
-      digitalWrite(ledPin1, LOW);
+      digitalWrite(state, LOW);
       break;
       /*
       int val = (257 - dis_val_mm) / 2;
