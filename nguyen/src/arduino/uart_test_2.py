@@ -6,7 +6,7 @@ ARDUINO = True
 if ARDUINO:
     global ser
 
-    serial_port = "/dev/ttyUSB0"  # arduino UNO
+    serial_port = "/dev/ttyACM0"  # arduino UNO
     # serial_port = '/dev/ttyACM0'
     # takemichi arduino nano evry
     baud_rate = 115200  # 9600, 115200

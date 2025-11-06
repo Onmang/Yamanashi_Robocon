@@ -31,7 +31,7 @@ from common_function import (
 )
 
 # debug
-DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
@@ -40,7 +40,7 @@ CHANGE_CAMERA_THRE_D405 = 550 # mm
 STOP_DIS_D405 = 170 # mm
 
 # arduino シリアル通信設定
-ARDUINO = False 
+ARDUINO = True 
 if ARDUINO:
     global ser
 
