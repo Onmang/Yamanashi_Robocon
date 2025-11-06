@@ -22,13 +22,17 @@ if ARDUINO:
     print("Serial Port was opened:", serial_port)
 
 try:
-
-    value = 0
+    mode = 1
+    angle_val = 10  # degrees
+    distance_val = 200  # mm
     send_time = 1/15 # 15 fps
+    counter = 1
 
-    # Example sending loop: build numeric message in format M A A A D D D D\n
-    # where M = mode (1 digit), AAA = angle (3 digits, zero-padded), DDDD = distance (4 digits, zero-padded)
     while True:
+        
+        if counter >= 15:
+            print(f"Sent {counter} messages, exiting.")
+            break
         
         # データが利用可能であれば読み取る
         if ser.in_waiting > 0:
@@ -44,20 +48,19 @@ try:
         
         
         # Example values; replace with your actual logic for mode/angle/dis
-        mode = 3
-        angle = value % 1000       # 0..999
-        dis = (value // 1000) % 100000  # 0..99999
+        angle = angle_val % 1000       # 0..999
+        dis = (distance_val // 1000) % 100000  # 0..99999
 
         # Format with zero-padding to fixed widths so Arduino can parse consistently
         msg = f"{mode}{angle:04d}{dis:05d}\n"
 
         try:
             ser.write(msg.encode('ascii'))
-            print(f"Sent: {msg.strip()}")
+            counter += 1
+            print(f"Sent {counter}: {msg.strip()}")
         except Exception as e:
             print("Failed to write to serial: " + str(e))
 
-        value += 1
         # avoid busy loop
         time.sleep(send_time)
 

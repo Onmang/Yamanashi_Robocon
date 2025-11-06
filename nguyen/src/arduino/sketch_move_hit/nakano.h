@@ -164,3 +164,62 @@ void computeCommandRates(float &x_cmd, float &y_cmd)
     x_cmd = 0.0f;
     y_cmd = 0.0f;
 }
+
+// ===== 絶対値モード用関数 =====
+// 角度と距離を絶対値指定で移動する関数
+// 角度[deg], 距離[mm]を入力
+// 例: moveAbsolute(30, 1000);
+void moveAbsolute(float targetAngle_deg, float targetDist_mm)
+{
+    // --- 可調整パラメータ ---
+    const float DEG_TO_REV = 0.0020f;   // 回転1度あたりのホイール回転量 [rev/deg]（調整用）
+    const float MM_TO_REV  = 1.0f / (PI * 42.0f); // 距離[mm] → 回転[rev] （車輪径42mm）
+
+    const float ROT_SPEED_RPS = 0.5f;   // 回転速度 [rev/s]
+    const float LIN_SPEED_RPS = 0.8f;   // 前進速度 [rev/s]
+
+    const float DT = 0.001f;  // 制御周期 [s]
+    const float TICK_US = 1000.0f;
+
+    // --- 1) 回転動作 ---
+    float rotTargetRev = targetAngle_deg * DEG_TO_REV; // ホイール回転量
+    float rotSign = (rotTargetRev >= 0) ? +1.0f : -1.0f;
+    float rotRemain = fabsf(rotTargetRev);
+
+    x_step_accum = 0.0f;
+    y_step_accum = 0.0f;
+
+    while (rotRemain > 0.0f)
+    {
+        float step = ROT_SPEED_RPS * DT;
+        if (step > rotRemain)
+            step = rotRemain;
+
+        float x_cmd = ROT_CCW_X_SIGN * rotSign * ROT_SPEED_RPS;
+        float y_cmd = ROT_CCW_Y_SIGN * (-rotSign * ROT_SPEED_RPS);
+        driveVelocity(x_cmd, y_cmd, DT);
+        rotRemain -= step;
+        delayMicroseconds(TICK_US);
+    }
+
+    // --- 2) 直進動作 ---
+    float linTargetRev = targetDist_mm * MM_TO_REV;
+    float linSign = (linTargetRev >= 0) ? +1.0f : -1.0f;
+    float linRemain = fabsf(linTargetRev);
+
+    while (linRemain > 0.0f)
+    {
+        float step = LIN_SPEED_RPS * DT;
+        if (step > linRemain)
+            step = linRemain;
+
+        float x_cmd = FORWARD_X_SIGN * (LIN_SPEED_RPS * linSign);
+        float y_cmd = FORWARD_Y_SIGN * (LIN_SPEED_RPS * linSign);
+        driveVelocity(x_cmd, y_cmd, DT);
+        linRemain -= step;
+        delayMicroseconds(TICK_US);
+    }
+
+    // 停止
+    driveVelocity(0.0f, 0.0f, DT);
+}

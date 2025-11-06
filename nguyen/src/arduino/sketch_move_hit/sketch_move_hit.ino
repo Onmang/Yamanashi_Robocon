@@ -54,9 +54,14 @@ void setup() {
   servoB.attach(10);  // ミニサーボ
   servoC.attach(9);  // 角度サーボ
 
-  servoB.write(150);
+  servoA.write(angleA);
+  delay(1500);
+  servoB.write(angleB);
+  delay(1000);
+  servoB.write(150); //ミニサーボをロック位置にセット
   delay(1000);
   servoA.write(30);
+  delay(2000);
 
   // nakano setup
   pinMode(X_STEP, OUTPUT);
@@ -151,17 +156,17 @@ void loop() {
     case 2: {
       int val = (257 - dis_val_mm) / 2;
       angleA = constrain(val, 130, 0);
-
+  
       // ひとまずそのままやるならこう
       delay(1000);
       servoA.write(angleA);
       delay(2000);
       servoB.write(40);
-      delay(2000);
+      delay(4000);  
       servoA.write(180);
-      delay(2000);
+      delay(4000);
       servoB.write(150);
-      delay(2000);
+      delay(1000);
       servoA.write(30);
       break;
     }
@@ -222,14 +227,14 @@ void loop() {
 
       //認識
       if (maxValue > threshold_MAX && ave > threshold_ave) {
-        Serial.print("  !");
-        digitalWrite(ledPin1, HIGH);
+        //Serial.print("  !");
+        //digitalWrite(ledPin1, HIGH);
         i = 1;
       }else{
-        digitalWrite(ledPin1, LOW);
-        digitalWrite(ledPin2, LOW);
-        //x_cmd = ROT_CCW_X_SIGN * 100.0f;
-        //y_cmd = ROT_CCW_Y_SIGN * (-10.0f); 
+        //digitalWrite(ledPin1, LOW);
+        //digitalWrite(ledPin2, LOW);
+        //x_cmd = ROT_CCW_X_SIGN * 0.10f;
+        //y_cmd = ROT_CCW_Y_SIGN * (-0.10f); 
         //driveVelocity(x_cmd, y_cmd, dt);
         i=0;
       }
@@ -244,15 +249,25 @@ void loop() {
       }
 
       if(i==0){
-        x_cmd = ROT_CCW_X_SIGN * 0.8f;
-        y_cmd = ROT_CCW_Y_SIGN * (-0.8f); 
+        x_cmd = ROT_CCW_X_SIGN * 0.10f;
+        y_cmd = ROT_CCW_Y_SIGN * (-0.10f); 
         driveVelocity(x_cmd, y_cmd, dt);
         delay(dt);
       }
       
       //delay(5); 
       break;         
-    }  
+    } 
+
+
+
+
+    case 4: {
+     moveAbsolute((float)angle_deg, (float)dis_val_mm);
+     mode_val = 0; // 1回だけ動作して停止
+     break;
+    }
+ 
 
     default: {
       // mode_valが1でも2でもない → 何もしない（停止）
