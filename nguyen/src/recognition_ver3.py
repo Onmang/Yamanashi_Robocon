@@ -39,7 +39,10 @@ from common_function import (
 
 from common_function_vis import (
     draw_center_distance_debug,
+    draw_circularity_candidates,
+    draw_flag_triangles_debug,
 )
+
 
 # GPIO PIN
 STOP_PIN = 23  # GPIO pin for stop signal
@@ -77,8 +80,8 @@ hit_delay_time = 3.0  # sec 打つ動作の待機時間
 ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF
 if ARDUINO:
     global ser
-    # serial_port = "/dev/ttyACM0"  # arduino UNO
-    serial_port = "/dev/ttyUSB0"  # arduino UNO
+    serial_port = "/dev/ttyACM0"  # arduino UNO
+    # serial_port = "/dev/ttyUSB0"  # arduino UNO
     baud_rate = 115200  # 9600, 115200
     ser = serial.Serial(
         serial_port,
@@ -91,7 +94,6 @@ if ARDUINO:
     ser.reset_output_buffer()
     if DEBUG:
         print("Serial Port was opened:", serial_port)
-
 
 def main():
     cam_d435i = None

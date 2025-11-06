@@ -23,6 +23,7 @@ PARAM_PATH_HSV = [
     "hsv_params_banker.json", #7
     "hsv_params_white.json",  #8 コース２のグリーンとゴール付近
     "hsv_params_blue_d405.json", #9
+    "hsv_params_post.json", #10
 ]  # 保存先パス選択
 PARAM_HOUGH_D435I = "houghcircles_params.json"
 PARAM_HOUGH_D405 = "houghcircles_d405_params.json"
