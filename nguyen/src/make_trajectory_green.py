@@ -39,8 +39,8 @@ DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
-CHANGE_CAMERA_THRE_D435I = 350 # mm
-CHANGE_CAMERA_THRE_D405 = 550 # mm
+ALPHA_VAL = 0.8  # 安全領域のしきい値（0.0～1.0）
+
 
 # window名
 WIN_DIST  = "Distance Map"
@@ -56,7 +56,7 @@ if ARDUINO:
     ser = serial.Serial(
         serial_port,
         baud_rate,  # できれば 115200 を推奨
-        timeout=1,  # 読み取りは非ブロッキング（読みはしてないが安全）
+        timeout=0,  # 読み取りは非ブロッキング（読みはしてないが安全）
         write_timeout=0,  # 書き込みもブロッキングしない
     )
     time.sleep(2.0)  # リセット待ち 単位：sec
@@ -256,9 +256,6 @@ def main():
             # まずは最大ラベルからマスクを作る
             mask_largest = np.zeros_like(mask_morph)
             if retval > 1:
-                # stats の中で選んだ bbox があるので、そのラベルをもう一回探す方法もあるけど
-                # 今回は「重心の近くにあるラベル」を使うやり方にする
-                # → でも一番簡単なのは「stats の中で面積が最大のものをもう一度選ぶ」こと
                 areas = stats[1:, cv2.CC_STAT_AREA]
                 if areas.size > 0:
                     max_idx = 1 + np.argmax(areas)  # 0は背景なので +1
@@ -273,7 +270,7 @@ def main():
                     if DEBUG:
                         alpha_percent = cv2.getTrackbarPos("alpha(%)", WIN_ALPHA)
                     else:
-                        alpha_percent = 80  # デフォルト値
+                        alpha_percent = ALPHA_VAL * 100  # デフォルト値
                     alpha = alpha_percent / 100.0
 
                     # 安全中心を計算
