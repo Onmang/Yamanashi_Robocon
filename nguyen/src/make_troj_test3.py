@@ -258,11 +258,11 @@ def main():
     cv2.setMouseCallback(WIN_RESULT, on_mouse)
 
     # HSVトラックバー
-    cv2.createTrackbar("H_low",  WIN_HSV, 36, 179, _noop)
-    cv2.createTrackbar("H_high", WIN_HSV, 84, 179, _noop)
-    cv2.createTrackbar("S_low",  WIN_HSV, 0,   255, _noop)
+    cv2.createTrackbar("H_low",  WIN_HSV, 44, 179, _noop)
+    cv2.createTrackbar("H_high", WIN_HSV, 106, 179, _noop)
+    cv2.createTrackbar("S_low",  WIN_HSV, 43,   255, _noop)
     cv2.createTrackbar("S_high", WIN_HSV, 255, 255, _noop)
-    cv2.createTrackbar("V_low",  WIN_HSV, 109,   255, _noop)
+    cv2.createTrackbar("V_low",  WIN_HSV, 90,   255, _noop)
     cv2.createTrackbar("V_high", WIN_HSV, 255, 255, _noop)
 
     # alphaトラックバー
@@ -363,7 +363,7 @@ def main():
                 path_clear = is_path_clear_by_dist(
                     dist, robot_xy, goal_xy,
                     step=3,
-                    min_safe_dist=10.0
+                    min_safe_dist=15.0
                 )
 
                 color = (0,255,0) if path_clear else (0,0,255)
@@ -402,8 +402,8 @@ def main():
                         origin=robot_xy,
                         goal_y=goal_xy[1],
                         x_step=5,
-                        step_along_line=3, 
-                        min_safe_dist=2.0
+                        step_along_line=3,
+                        min_safe_dist=10.0
                     )
                     cv2.line(hscan_img, robot_xy, best_h_pt, (255,255,0), 2)
                     cv2.circle(hscan_img, best_h_pt, 5, (255,255,0), -1)
