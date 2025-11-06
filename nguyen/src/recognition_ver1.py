@@ -37,7 +37,7 @@ AREA_MIN = 100  # 小ノイズ除去
 AREA_MAX = 20000  # 大きすぎる塊を除外（必要に応じ調整）
 
 # Arduino接続設定
-ARDUINO = False
+ARDUINO = True
 if ARDUINO:
     global ser
 
