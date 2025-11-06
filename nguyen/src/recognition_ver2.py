@@ -31,7 +31,7 @@ from common_function import (
 )
 
 # debug
-DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = True    # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
@@ -40,7 +40,7 @@ CHANGE_CAMERA_THRE_D405 = 550 # mm
 STOP_DIS_D405 = 170 # mm
 
 # arduino シリアル通信設定
-ARDUINO = True 
+ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF 
 if ARDUINO:
     global ser
 
@@ -87,47 +87,6 @@ def main():
     # 解像度とFPS
     W, H, FPS = 640, 480, 15
 
-    # RealSense D435i カメラ初期化
-    cam_d435i = init_realsense_camera(
-        name="d435i",
-        serial="949122070535",  # 実機のシリアル
-        width=W,
-        height=H,
-        fps=FPS,
-        extrinsic_guess={
-            "tx": -(32.5 * 0.001),
-            "ty": -50 * 0.001,
-            "tz": 200 * 0.001,
-            "rx_deg": -90, 
-            "ry_deg": 0,
-            "rz_deg": 0,
-        },
-        dis_param_path=PARAM_PATH_DIS_D435I,
-        hough_param_path=PARAM_HOUGH_D435I,
-        ball_hsv_param_path=PARAM_PATH_HSV[2],
-    )
-
-    # RealSense D405 カメラ初期化
-    # d405はcam3d
-    cam_d405 = init_realsense_camera(
-            name="d405",        
-            serial="218622274519",  # 実機のシリアル
-            width=W,
-            height=H,
-            fps=FPS,
-            extrinsic_guess={
-                "tx": 0.0,
-                "ty": 0.0,
-                "tz": 0.0,
-                "rx_deg": -90,
-                "ry_deg": 0,
-                "rz_deg": 0,
-            },
-            dis_param_path=PARAM_PATH_DIS_D405,
-            hough_param_path=PARAM_HOUGH_D405,
-            ball_hsv_param_path=PARAM_PATH_HSV[9],
-    )
-
     # --------------------------------------------
     # windown関係
     # --------------------------------------------
@@ -161,7 +120,48 @@ def main():
     # メインループ
     # --------------------------------------------
     try:
+        # RealSense D435i カメラ初期化
+        cam_d435i = init_realsense_camera(
+            name="d435i",
+            serial="949122070535",  # 実機のシリアル
+            width=W,
+            height=H,
+            fps=FPS,
+            extrinsic_guess={
+                "tx": -(32.5 * 0.001),
+                "ty": -50 * 0.001,
+                "tz": 200 * 0.001,
+                "rx_deg": -90, 
+                "ry_deg": 0,
+                "rz_deg": 0,
+            },
+            dis_param_path=PARAM_PATH_DIS_D435I,
+            hough_param_path=PARAM_HOUGH_D435I,
+            ball_hsv_param_path=PARAM_PATH_HSV[2],
+        )
+        # RealSense D405 カメラ初期化
+        # d405はcam3d
+        cam_d405 = init_realsense_camera(
+                name="d405",        
+                serial="218622274519",  # 実機のシリアル
+                width=W,
+                height=H,
+                fps=FPS,
+                extrinsic_guess={
+                    "tx": 0.0,
+                    "ty": 0.0,
+                    "tz": 0.0,
+                    "rx_deg": -90,
+                    "ry_deg": 0,
+                    "rz_deg": 0,
+                },
+                dis_param_path=PARAM_PATH_DIS_D405,
+                hough_param_path=PARAM_HOUGH_D405,
+                ball_hsv_param_path=PARAM_PATH_HSV[9],
+        )
+
         # アクティブカメラ
+        time.sleep(1)  # カメラ安定化待ち
         activate_cam = cam_d435i
         mode = 1
         # 送信フラグ
@@ -505,8 +505,10 @@ def main():
     finally:
         if ARDUINO and ser is not None:
             ser.close()
-        cam_d435i.pipeline.stop()
-        cam_d405.pipeline.stop()
+        if cam_d435i is not None:
+            cam_d435i.pipeline.stop()
+        if cam_d405 is not None:
+            cam_d405.pipeline.stop()       
         if DEBUG:
             cv2.destroyAllWindows()
 

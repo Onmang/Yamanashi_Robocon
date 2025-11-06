@@ -8,12 +8,10 @@ import sys                          #sysモジュールをインポート
 
 #ポート番号の定義
 Sw_pin = 23                         #変数"Sw_pin"に23を格納
-Led_pin = 24                        #変数"Led_pin"に24を格納
 #GPIOの設定
 GPIO.setmode(GPIO.BCM)              #GPIOのモードを"GPIO.BCM"に設定
 #GPIO23を入力モードに設定してプルダウン抵抗を有効にする
-GPIO.setup(Sw_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(Led_pin, GPIO.OUT)
+GPIO.setup(Sw_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 
 #while文で無限ループ
@@ -26,7 +24,6 @@ while True:
         if GPIO.input(Sw_pin) == GPIO.HIGH:  #GPIO23が"1"のとき
             counter = 0 
             print("[Debug] Hold...")
-            GPIO.output(Led_pin, GPIO.HIGH)  #GPIO24を"ON"にする
             continue  #passの代わりにcontinueを使用してループの先頭に戻る
         print(f"[Debug] counter={counter}")
         time.sleep(0.5)                       #0.5秒間待つ
