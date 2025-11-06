@@ -214,16 +214,16 @@ void loop() {
         }
 
       
-      // 出力
-      //Serial.print("MAX:"); Serial.print(maxValue);
+      // 出力 
+      Serial.print("MAX:"); Serial.print(maxValue);
       if(maxValue>threshold_MAX){
-      //Serial.print("*");
+      Serial.print("*");
       }
-      //Serial.print(" AVE:"); Serial.print(ave);
+      Serial.print(" AVE:"); Serial.print(ave);
       if(ave>threshold_ave){
-      //Serial.print("*");
+      Serial.print("*");
       }
-      //Serial.print(" N:");   Serial.print(sampleCount);  
+      Serial.print(" N:");   Serial.print(sampleCount);  
 
       //認識
       if (maxValue > threshold_MAX && ave > threshold_ave) {
@@ -240,7 +240,7 @@ void loop() {
       }
 
 
-      //Serial.println();
+      Serial.println();
 
       // 片付け
       maxValue = 0;

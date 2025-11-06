@@ -23,7 +23,7 @@ const int ROT_CCW_X_SIGN = -1;
 const int ROT_CCW_Y_SIGN = +1;
 
 // ===== 速度・調整 =====
-const float LIN_FAST_RPS = 1.00f;     // 直進：遠い時
+const float LIN_FAST_RPS = 1.20f;     // 直進：遠い時
 const float LIN_SLOW_RPS = 0.30f;     // 直進：近傍
 const float ROT_FAST_RPS = 0.50f;     // 回頭：遠い時
 const float ROT_SLOW_RPS = 0.10f;     // 回頭：近傍
