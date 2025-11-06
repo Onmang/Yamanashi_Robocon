@@ -1,4 +1,7 @@
 #include <Servo.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial mySerial(2, 255);  // RX=2, TX=未使用
 
 Servo servoA;
 Servo servoB;
@@ -17,6 +20,7 @@ int prevState = LOW;  // 直前の状態（初期値LOW）
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
+  mySerial.begin(9600);     // 親からの受信開始
 
   servoA.attach(9);    // デカサーボ
   servoB.attach(10);   // ミニサーボ
@@ -37,8 +41,8 @@ void loop() {
   if (mySerial.available()) {
   String str = mySerial.readStringUntil('\n');  // 改行まで読む
   dis_val_mm = str.toInt();
-  Serial.print("受信データ: ");
-  Serial.println(dis_val_mm);
+  //Serial.print("受信データ: ");
+  //Serial.println(dis_val_mm);
   }
 
   int state = digitalRead(13);
