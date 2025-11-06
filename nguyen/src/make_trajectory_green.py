@@ -39,8 +39,12 @@ DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
-CHANGE_CAMERA_THRE_D435I = 350 # mm
-CHANGE_CAMERA_THRE_D405 = 550 # mm
+ALPHA_VAL = 0.8  # 安全領域のしきい値（0.0～1.0）
+
+
+# window名
+WIN_DIST  = "Distance Map"
+WIN_ALPHA = "alpha control"
 
 # arduino シリアル通信設定
 ARDUINO = False 
@@ -52,7 +56,7 @@ if ARDUINO:
     ser = serial.Serial(
         serial_port,
         baud_rate,  # できれば 115200 を推奨
-        timeout=1,  # 読み取りは非ブロッキング（読みはしてないが安全）
+        timeout=0,  # 読み取りは非ブロッキング（読みはしてないが安全）
         write_timeout=0,  # 書き込みもブロッキングしない
     )
     time.sleep(2.0)  # リセット待ち 単位：sec
@@ -61,8 +65,10 @@ if ARDUINO:
     if DEBUG:
         print("Serial Port was opened:", serial_port)
 
+def _noop(x): pass
 
 def main():
+
     # --------------------------------------------
     # パラメータ読み込み
     # --------------------------------------------
@@ -121,7 +127,12 @@ def main():
         # cv2.namedWindow("Gaussian Filter", cv2.WINDOW_NORMAL)
         # cv2.namedWindow("HSV Mask", cv2.WINDOW_NORMAL)
         cv2.namedWindow("HSV Mask Morph", cv2.WINDOW_NORMAL)
+        cv2.namedWindow(WIN_DIST, cv2.WINDOW_NORMAL)
+        cv2.namedWindow(WIN_ALPHA, cv2.WINDOW_NORMAL)
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
+        
+        # alphaトラックバー（安全領域のしきい値 %）
+        cv2.createTrackbar("alpha(%)", WIN_ALPHA, 90, 100, _noop)
 
         # サイズ変更
         w_re = 300
@@ -130,6 +141,8 @@ def main():
         # cv2.resizeWindow("Gaussian Filter", w_re, h_re)
         # cv2.resizeWindow("HSV Mask", w_re, h_re)
         cv2.resizeWindow("HSV Mask Morph", w_re, h_re)
+        cv2.resizeWindow(WIN_DIST, w_re, h_re)
+        cv2.resizeWindow(WIN_ALPHA, w_re, 10)
         cv2.resizeWindow("Result", w_re, h_re)
 
         # 移動
@@ -232,58 +245,94 @@ def main():
 
             ## ラベリング処理 ##
             retval, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_morph)
-            # mask_morph は 0/255 の2値
-            cx_l, cy_l, area_l, bbox = largest_component_centroid(
-                retval, labels, stats, centroids, area_min=AREA_MIN
-            )
 
             # 送信準備
             state = "LOST"  # 可視化用
             sent = False  # このフレームで送信済みか
+            # 安全中心の座標を初期化（見つからないかもしれないので）
+            safe_u, safe_v = None, None
 
-            if cx_l is not None:
-                # 可視化：BBoxと重心
-                x, y, w, h = bbox
-                u, v = int(round(cx_l)), int(round(cy_l))
-                # --- vis 側に描画 ---
-                cv2.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
-                cv2.drawMarker(vis, (u, v), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
-                cv2.putText(
-                    vis,
-                    f"Area:{area_l}  C:({u},{v})",
-                    (x, y - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (255, 0, 0),
-                    2,
-                )
+            # --- ここから「最大領域で距離変換して安全中心を出す」処理 ---
+            # まずは最大ラベルからマスクを作る
+            mask_largest = np.zeros_like(mask_morph)
+            if retval > 1:
+                areas = stats[1:, cv2.CC_STAT_AREA]
+                if areas.size > 0:
+                    max_idx = 1 + np.argmax(areas)  # 0は背景なので +1
+                    mask_largest[labels == max_idx] = 255
 
-                # 深度表示（任意）
-                depth_text = "Depth: N/A"
-                if 0 <= v < depth_image.shape[0] and 0 <= u < depth_image.shape[1]:
-                    depth_value = depth_image[v, u]
-                    depth_m = depth_value * activate_cam.depth_scale
-                    depth_text = f"{depth_m:.3f}m"
-                cv2.putText(
-                    vis,
-                    depth_text,
-                    (u + 5, v - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 0, 255),
-                    2,
-                )
+                # 距離変換パート
+                if np.count_nonzero(mask_largest) > 0:
+                    # distanceTransform (float32)
+                    dist = cv2.distanceTransform(mask_largest, cv2.DIST_L2, 5)
 
+                    # alpha をトラックバーから取得（あなたのコードでは WIN_ALPHA）
+                    if DEBUG:
+                        alpha_percent = cv2.getTrackbarPos("alpha(%)", WIN_ALPHA)
+                    else:
+                        alpha_percent = ALPHA_VAL * 100  # デフォルト値
+                    alpha = alpha_percent / 100.0
+
+                    # 安全中心を計算
+                    cx_safe, cy_safe, radius = get_safe_center(dist, alpha)
+
+                    # 距離マップを可視化して表示用に作る
+                    dist_norm = cv2.normalize(dist, None, 0, 255, cv2.NORM_MINMAX)
+                    dist_norm = dist_norm.astype(np.uint8)
+                    dist_color = cv2.applyColorMap(dist_norm, cv2.COLORMAP_JET)
+
+                    # vis にも描画する（vis は前に作った描画用画像）
+                    if cx_safe != -1:
+                        safe_u, safe_v = cx_safe, cy_safe  # 3D投影用に保存
+                        h_vis, w_vis = vis.shape[:2]
+
+                        radius = int(radius)
+                        radius = min(radius, int(np.hypot(w_vis, h_vis)))  # 過大防止
+
+                        # 半円（上半分）
+                        cv2.ellipse(
+                            vis,
+                            (cx_safe, cy_safe),
+                            (radius, radius),
+                            0,
+                            0, 180,
+                            (0, 255, 0),
+                            2
+                        )
+                        # 中心点
+                        cv2.circle(vis, (cx_safe, cy_safe), 6, (0, 0, 255), -1)
+                        cv2.putText(
+                            vis, f"alpha={alpha:.2f}", (cx_safe + 5, cy_safe - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1
+                        )
+                    else:
+                        cv2.putText(
+                            vis, "No Safe Area", (20, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2
+                        )
+
+                    # デバッグ表示
+                    if DEBUG:
+                        cv2.imshow(WIN_DIST, dist_color)
+                else:
+                    # 領域がないとき
+                    if DEBUG:
+                        empty_dist = np.zeros((mask_morph.shape[0], mask_morph.shape[1], 3), np.uint8)
+                        cv2.imshow(WIN_DIST, empty_dist)
+            
                 # 3D投影 → ロボ座標
-                cam3d, rob3d = project_center_to_robot(
-                    u=u,
-                    v=v,
-                    depth_image=depth_image,
-                    depth_scale=activate_cam.depth_scale,
-                    intr=activate_cam.intr,
-                    T_cam2rob=activate_cam.T_cam2rob,
-                    roi=7,
-                )
+                if safe_u is not None:
+                    cam3d, rob3d = project_center_to_robot(
+                        u=safe_u,
+                        v=safe_v,
+                        depth_image=depth_image,
+                        depth_scale=activate_cam.depth_scale,
+                        intr=activate_cam.intr,
+                        T_cam2rob=activate_cam.T_cam2rob,
+                        roi=7,
+                    )
+                else: 
+                    cam3d, rob3d = None, None
 
                 if cam3d is not None:
                     Xc, Yc, Zc = cam3d
@@ -309,7 +358,7 @@ def main():
                     cv2.putText(
                         vis,
                         f"Cam[{Xc:.3f},{Yc:.3f},{Zc:.3f}]m",
-                        (u - 100, v + 60),
+                        (safe_u - 100, safe_v + 60),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.9,
                         (255, 255, 255),
@@ -318,7 +367,7 @@ def main():
                     cv2.putText(
                         vis,
                         f"Rob[{Xr:.3f},{Yr:.3f},{Zr:.3f}]m",
-                        (u - 100, v + 95),
+                        (safe_u - 100, safe_v + 95),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.9,
                         (0, 255, 255),
@@ -327,7 +376,7 @@ def main():
                     cv2.putText(
                         vis,
                         f"D_rob:{dist_mm}mm",
-                        (u - 100, v + 130),
+                        (safe_u - 100, safe_v + 130),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.9,
                         (0, 255, 0),
@@ -336,7 +385,7 @@ def main():
                     cv2.putText(
                         vis,
                         f"Angle:{angle_deg}deg",
-                        (u - 100, v + 165),
+                        (safe_u - 100, safe_v + 165),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.9,
                         (0, 255, 0),
@@ -408,7 +457,8 @@ def main():
             k = cv2.waitKey(1) & 0xFF
             if k in (27, ord("q")):
                 break
-
+    except KeyboardInterrupt:
+        print("program finished by keyboard interrupt.")
     finally:
         if ARDUINO and ser is not None:
             ser.close()
@@ -448,6 +498,38 @@ def largest_component_centroid(retval, labels, stats, centroids, area_min=100):
     cx, cy = centroids[idx]
     bbox = (int(xs[idx_rel]), int(ys[idx_rel]), int(ws[idx_rel]), int(hs[idx_rel]))
     return float(cx), float(cy), int(areas[idx_rel]), bbox
+
+
+def get_safe_center(dist: np.ndarray, alpha: float):
+    """
+    distanceTransform結果 dist に対して、
+    境界から十分離れた領域（dist > alpha * maxVal）の重心を求める。
+
+    Parameters
+    ----------
+    dist : np.ndarray
+        cv2.distanceTransform の出力（float32）
+    alpha : float
+        最大値に対する割合 (例: 0.9 → 最大値の90%以上を安全領域とする)
+
+    Returns
+    -------
+    (cx, cy) : tuple[int, int]
+        安全領域の中心座標。領域がなければ (-1, -1) を返す。
+    """
+    # 最大値を取得
+    _, maxVal, _, _ = cv2.minMaxLoc(dist)
+
+    # 安全領域をマスク化
+    safe_mask = dist > alpha * maxVal
+    ys, xs = np.where(safe_mask)
+
+    if len(xs) == 0:
+        return -1, -1, -1
+
+    cx = int(xs.mean())
+    cy = int(ys.mean())
+    return cx, cy, dist[cy, cx]# 半径 [px]
 
 
 if __name__ == "__main__":

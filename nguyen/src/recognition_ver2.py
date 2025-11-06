@@ -49,7 +49,7 @@ if ARDUINO:
     ser = serial.Serial(
         serial_port,
         baud_rate,  # できれば 115200 を推奨
-        timeout=1,  # 読み取りは非ブロッキング（読みはしてないが安全）
+        timeout=0,  # 読み取りは非ブロッキング（読みはしてないが安全）
         write_timeout=0,  # 書き込みもブロッキングしない
     )
     time.sleep(2.0)  # リセット待ち 単位：sec
