@@ -28,6 +28,7 @@ from common_function import (
     find_best_horizontal,
     check_goal_path,
     encode_distance_ver2,
+    detect_goal_post,
     PARAM_PATH_DIS_D435I,
     PARAM_PATH_HSV,
     PARAM_PATH_DIS_D405,
@@ -62,6 +63,7 @@ WINDOW_RESULT = "Result"
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MIN_FLAG = 150  # flag用三角形最小面積
+AREA_MIN_POST = 150  # post用三角形最小面積
 ALPHA_VAL = 0.8  # 安全pathマージン
 CHANGE_CAMERA_THRE_D435I = 400  # mm
 CHANGE_CAMERA_THRE_D405 = 600  # mm
@@ -70,6 +72,13 @@ dist_th_2 = 200  # mm  打つ直前のd405とballの距離
 dist_move = 20  # mm ボール打つ準備時の移動距離
 dist_max = 200  # mm ボール打つ準備時にボールをlostしたとき, ※要調整
 angle_th_1 = 1  # deg
+
+# ゴール認識閾値 、2打目以上、通常
+dist_min_cm_goal = 30  # cm
+dist_max_cm_goal = 150  # cm
+# ゴール認識閾値 、ゴールが近すぎる場合
+dist_min_cm_goal_2 = 10  # cm
+dist_max_cm_goal_2 = 80  # cm
 
 # 打つときの閾値
 hit_angle_1 = 20  # deg
@@ -122,6 +131,7 @@ def main():
         # hsvパラメータ読み込み
         flag_lo, flag_hi = load_hsv_from_json(PARAM_PATH_HSV[3])
         white_lo, white_hi = load_hsv_from_json(PARAM_PATH_HSV[8])
+        post_lo, post_hi = load_hsv_from_json(PARAM_PATH_HSV[10])
 
         # ガウシアンフィルター
         gaus_k, sigmaX = load_filter_params_from_json(PARAM_FILTER)
@@ -302,17 +312,30 @@ def main():
                     if activate_cam is not cam_d435i:
                         activate_cam = cam_d435i
                     # 前処理の2値化
-                    mask_morph, vis = preprocess_depth_and_hsv(
-                        color_image,
-                        depth_image,
-                        activate_cam,
-                        dist_min_cm=None,
-                        dist_max_cm=None,
-                        gaus_k=gaus_k,
-                        sigmaX=sigmaX,
-                        hsv_lo=flag_lo,
-                        hsv_hi=flag_hi,
-                    )
+                    if Hit_n == 1:
+                        mask_morph, vis = preprocess_depth_and_hsv(
+                            color_image,
+                            depth_image,
+                            activate_cam,
+                            dist_min_cm=None,
+                            dist_max_cm=None,
+                            gaus_k=gaus_k,
+                            sigmaX=sigmaX,
+                            hsv_lo=flag_lo,
+                            hsv_hi=flag_hi,
+                        )
+                    else:
+                        mask_morph, vis = preprocess_depth_and_hsv(
+                            color_image,
+                            depth_image,
+                            activate_cam,
+                            dist_min_cm=dist_min_cm_goal,
+                            dist_max_cm=dist_max_cm_goal,
+                            gaus_k=gaus_k,
+                            sigmaX=sigmaX,
+                            hsv_lo=flag_lo,
+                            hsv_hi=flag_hi,
+                        )
                     # 三角形検出
                     triangles = detect_triangles(
                         mask_morph,
@@ -326,6 +349,31 @@ def main():
                         evaluate_triangles_detection(
                             triangles, depth_image, activate_cam
                         )
+                    )
+
+                ### ゴールが近すぎる場合 ###
+                case 210:
+                    if activate_cam is not cam_d435i:
+                        activate_cam = cam_d435i
+                        
+                    mask_morph, vis = preprocess_depth_and_hsv(
+                            color_image,
+                            depth_image,
+                            activate_cam,
+                            dist_min_cm=dist_min_cm_goal_2,
+                            dist_max_cm=dist_max_cm_goal_2,
+                            gaus_k=gaus_k,
+                            sigmaX=sigmaX,
+                            hsv_lo=post_lo,
+                            hsv_hi=post_hi,
+                        )
+                    
+                    recog_res, _, rob3d, _, _ = detect_goal_post(
+                        mask_morph,
+                        area_min_label=AREA_MIN,
+                        area_min=AREA_MIN_POST,
+                        aspect_min=3.0,
+                        epsilon_ratio=0.03,
                     )
 
                 ### 自由歩きモード ###
