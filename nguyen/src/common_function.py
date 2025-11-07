@@ -828,7 +828,7 @@ def evaluate_triangles_detection(triangles, depth_image, activate_cam):
         dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
         # 範囲フィルタリング
-        if 100 < dist_rob_mm < 2500:
+        if 100 < dist_rob_mm < 4000:
             valid_triangles.append(tri)
             valid_rob3d.append(rob3d)
             valid_cam3d.append(cam3d)

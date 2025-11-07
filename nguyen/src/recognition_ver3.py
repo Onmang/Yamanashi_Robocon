@@ -62,13 +62,13 @@ WINDOW_RESULT = "Result"
 # しきい値関係
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MIN_FLAG = 150  # flag用三角形最小面積
+AREA_MIN_FLAG = 100  # flag用三角形最小面積
 AREA_MIN_POST = 150  # post用三角形最小面積
 ALPHA_VAL = 0.8  # 安全pathマージン
-CHANGE_CAMERA_THRE_D435I = 400  # mm
-CHANGE_CAMERA_THRE_D405 = 600  # mm
-dist_th_1 = 100  # mm
-dist_th_2 = 200  # mm  打つ直前のd405とballの距離
+CHANGE_CAMERA_THRE_D435I = 600  # mm
+CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I+150  # mm
+dist_th_1 = 70  # mm
+dist_th_2 = 130  # mm  打つ直前のd405とballの距離
 dist_move = 20  # mm ボール打つ準備時の移動距離
 dist_max = 200  # mm ボール打つ準備時にボールをlostしたとき, ※要調整
 angle_th_1 = 1  # deg
@@ -81,12 +81,12 @@ dist_min_cm_goal_2 = 10  # cm
 dist_max_cm_goal_2 = 80  # cm
 
 # 打つときの閾値
-hit_angle_1 = 20  # deg
+hit_angle_1 = 10  # deg
 hit_dis_1 = 2000  # mm
-hit_delay_time = 3.0  # sec 打つ動作の待機時間
+hit_delay_time = 5.0  # sec 打つ動作の待機時間
 
 # arduino シリアル通信設定
-ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF
+ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF
 if ARDUINO:
     global ser
     serial_port = "/dev/ttyACM0"  # arduino UNO
@@ -95,7 +95,7 @@ if ARDUINO:
     ser = serial.Serial(
         serial_port,
         baud_rate,  # できれば 115200 を推奨
-        timeout=1,  # 読み取りは非ブロッキング（読みはしてないが安全）
+        timeout=0,  # 読み取りは非ブロッキング（読みはしてないが安全）
         write_timeout=0,  # 書き込みもブロッキングしない
     )
     time.sleep(2.0)  # リセット待ち 単位：sec
@@ -107,7 +107,6 @@ if ARDUINO:
 def main():
     cam_d435i = None
     cam_d405 = None
-    ser = None
     # --------------------------------------------
     # windown関係
     # --------------------------------------------
@@ -191,7 +190,7 @@ def main():
         # init activate cam
         time.sleep(1.0)  # カメラ安定化待ち
         print("[DEBUG] Camera initialized.")
-        activate_cam = cam_d435i
+        activate_cam = cam_d405
 
         # --------------------------------------------
         # メインループ
@@ -225,14 +224,21 @@ def main():
             # 画像取得, すべてのモード共通
             color_image, depth_image = get_rgbd_images(activate_cam)
             
+            #フレームがまだ来てなかったら次のループへ
+            if color_image is None or depth_image is None:
+                continue
+            
             # センター距離計算
-            if DEBUG:
-                overlay = draw_center_distance_debug(color_image, depth_image, cam_d435i, W=640, H=480)
+            # if DEBUG:
+            #     overlay = draw_center_distance_debug(color_image, depth_image, cam_d435i, W=640, H=480)
 
             # 場合分け
             # ----------
             # 100: ボール探索モード
             # ----------
+            if DEBUG:
+                print(f"[Debug] case {rasp_mode}")
+
             match rasp_mode:
                 ### ボール探索モード ###
                 case 100:
@@ -370,10 +376,12 @@ def main():
                     
                     recog_res, _, rob3d, _, _ = detect_goal_post(
                         mask_morph,
+                        depth_image,
+                        activate_cam,
                         area_min_label=AREA_MIN,
-                        area_min=AREA_MIN_POST,
+                        area_min_post=AREA_MIN_POST,
                         aspect_min=3.0,
-                        epsilon_ratio=0.03,
+                        approx_eps_ratio=0.03,
                     )
 
                 ### 自由歩きモード ###
@@ -535,10 +543,10 @@ def main():
                             mode = 3  # 超音波探索
                             send_dist_mm = 0
                             send_angle_deg = 0
-                            if (
-                                miss_count > FPS * 10
-                            ):  # 10秒以上見失ったらボール探索へ戻る
-                                rasp_mode = 210
+                            # if (
+                            #     miss_count > FPS * 10
+                            # ):  # 10秒以上見失ったらボール探索へ戻る
+                            #     rasp_mode = 210
                 ### ゴールpathだめだった時にほかのpathを探す
                 # case 250:
                 #     match state:
@@ -566,7 +574,7 @@ def main():
                         dist_move_total = 0
                         # 送信
                         mode = 2
-                        send_dist_mm = dist_mm
+                        send_dist_mm = hit_dis_1
                         send_angle_deg = 0
 
                         # 初期化
@@ -577,37 +585,46 @@ def main():
                         # 更新
                         Hit_n += 1
                         hit_ready = False
-                        activate_cam = cam_d405
+                        activate_cam = cam_d435i
                         rasp_mode = 100
-                        time.sleep(hit_delay_time)  # 打つ時間待機
+                    # else:
+                    #     if state == "TRACK":
+                    #         if dist_mm > dist_th_2:
+                    #             mode = 0
+                    #             send_dist_mm = 0
+                    #             send_angle_deg = 0
+
+                    #             # 打つ準備
+                    #             hit_ready = True
+                    #         else:
+                    #             mode = 1
+                    #             send_dist_mm = -dist_move
+                    #             send_angle_deg = 0
+
+                    #             # 距離カウント
+                    #             dist_move_total += dist_move
+                    #     else:
+                    #         if dist_move_total < dist_max:
+                    #             mode = 1
+                    #             send_dist_mm = -10
+                    #             send_angle_deg = 0
+                    #         else:
+                    #             mode = 0
+                    #             send_dist_mm = 0
+                    #             send_angle_deg = 0
+
+                    #             # 打つ準備
+                    #             hit_ready = True
+                    
                     else:
-                        if state == "TRACK":
-                            if dist_mm > dist_th_2:
-                                mode = 0
-                                send_dist_mm = 0
-                                send_angle_deg = 0
+                        # 送信
+                        mode = 4
+                        send_dist_mm = -70  # 70mm バック
+                        send_angle_deg = 0
+                        
+                    # 打つ準備
+                        hit_ready = True
 
-                                # 打つ準備
-                                hit_ready = True
-                            else:
-                                mode = 1
-                                send_dist_mm = -dist_move
-                                send_angle_deg = 0
-
-                                # 距離カウント
-                                dist_move_total += dist_move
-                        else:
-                            if dist_move_total < dist_max:
-                                mode = 1
-                                send_dist_mm = -10
-                                send_angle_deg = 0
-                            else:
-                                mode = 0
-                                send_dist_mm = 0
-                                send_angle_deg = 0
-
-                                # 打つ準備
-                                hit_ready = True
                 case 400:
                     match state:
                         case "TRACK":
@@ -642,11 +659,14 @@ def main():
                         case "LOST":
                             mode = 1  # もうわからない
                             send_dist_mm = 0
-                            send_angle_deg = -90
+                            send_angle_deg = -45
 
                 case _:
                     print("[Debug] Undefined Mode")
-                    pass
+                    mode = 4  # もうわからない
+                    send_dist_mm = 0
+                    send_angle_deg = -45
+
 
             # シリアル送信
             if ARDUINO:
@@ -655,14 +675,17 @@ def main():
                 msg = f"{mode}{angle_code}{dist_code}\n"
                 try:
                     ser.write(msg.encode("ascii"))
-                    if DEBUG:
-                        print(f"[Debug] Sent{(state)}: {msg.strip()}")
+                    # if DEBUG:
+                        # print(f"[Debug] Sent{(state)}: {msg.strip()}")
+                    if rasp_mode == 300 and hit_ready:
+                        print("[Debug] Delay:", hit_delay_time)
+                        time.sleep(hit_delay_time)  # 打つ時間待機
                 except Exception as e:
                     print("Failed to write to serial:", e)
                     pass
                 
-            if DEBUG:
-                cv2.imshow(WINDOW_INPUT, overlay)
+            # if DEBUG:
+            #     cv2.imshow(WINDOW_INPUT, overlay)
 
     except KeyboardInterrupt:
         print("\n===== Keyboard Interrupt =====")

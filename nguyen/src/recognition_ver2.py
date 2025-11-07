@@ -8,6 +8,15 @@ import time
 import cv2
 import numpy as np
 import serial
+import RPi.GPIO as GPIO             #GPIO用のモジュールをインポート
+
+
+# GPIO PIN
+STOP_PIN = 23  # GPIO pin for stop signal
+GPIO.setmode(GPIO.BCM)              #GPIOのモードを"GPIO.BCM"に設定
+#GPIO23を入力モードに設定
+GPIO.setup(STOP_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
 
 from common_function import (
     compute_angles_from_position,
@@ -35,12 +44,12 @@ DEBUG = True    # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
-CHANGE_CAMERA_THRE_D435I = 350 # mm
-CHANGE_CAMERA_THRE_D405 = 550 # mm
-STOP_DIS_D405 = 170 # mm
+CHANGE_CAMERA_THRE_D435I = 600 # mm
+CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I+150 # mm
+STOP_DIS_D405 = 70 # mm
 
 # arduino シリアル通信設定
-ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF 
+ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF 
 if ARDUINO:
     global ser
 
@@ -168,6 +177,8 @@ def main():
         EMA_ALPHA = 0.30  # 0.1～0.5 で調整（大きいほど追従が速い／ノイズに弱い）
         MISS_LIMIT = 5  # 短期見失いの許容量（フレーム数）
 
+        D405_STOP_FLAG = False
+
         prev_angle = 0  # 直近の平滑化角度[deg]
         prev_dist = 0  # 直近の平滑化距離[mm]
         miss_count = 0  # 見失いカウンタ
@@ -175,8 +186,14 @@ def main():
         print("main loop....")
         # main loop
         while True:
+            # 緊急停止入力
+            if GPIO.input(STOP_PIN) == GPIO.HIGH:  #GPIO23が"1"のとき
+                print("[Debug] Emergency Stop Activated!")
+                continue
             circles = None
-
+            if D405_STOP_FLAG:
+                print("[Debug] D405 Stop Flag Activated!")
+                continue
             # get rgbd images
             color_image, depth_image = get_rgbd_images(activate_cam)
 
@@ -381,7 +398,7 @@ def main():
                         dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
                         # 距離がありえない値（極端にデカい/NaN）なら捨てる
-                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 4000):
+                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 2500):
 
                             # 角度[deg] ロボ+Y基準
                             angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
@@ -398,6 +415,7 @@ def main():
                             # [TEST]しきい値以内なら 0 距離を送る
                             dist_mm_thresh = STOP_DIS_D405  # mm D405の閾値
                             dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
+                            D405_STOP_FLAG = True if dist_mm < dist_mm_thresh else False
 
                             # 前回値更新
                             prev_angle = angle_deg
@@ -465,6 +483,8 @@ def main():
                             # print("Failed to write to serial:", e)
                 else:
                     # LOST: 安全化（ゼロ送信、直前値もリセット）
+                    if activate_cam is not cam_d435i:
+                        activate_cam = cam_d435i
                     state = "LOST"
                     prev_angle = 0
                     prev_dist = 0
