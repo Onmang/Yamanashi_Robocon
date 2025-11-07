@@ -29,13 +29,13 @@ from common_function import (
     PARAM_FILTER
 )
 
-DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MIN_FLAG = 150 # flag用三角形最小面積
+AREA_MIN_FLAG = 100 # flag用三角形最小面積
 
 # arduino シリアル通信設定
-ARDUINO = True
+ARDUINO = False
 if ARDUINO:
     global ser
 
@@ -44,7 +44,7 @@ if ARDUINO:
     ser = serial.Serial(
         serial_port,
         baud_rate,  # できれば 115200 を推奨
-        timeout=1,  # 読み取りは非ブロッキング（読みはしてないが安全）
+        timeout=0,  # 読み取りは非ブロッキング（読みはしてないが安全）
         write_timeout=0,  # 書き込みもブロッキングしない
     )
     time.sleep(2.0)  # リセット待ち 単位：sec
@@ -93,7 +93,7 @@ def main():
             "tx": -(32.5 * 0.001),
             "ty": -50 * 0.001,
             "tz": 200 * 0.001,
-            "rx_deg": -103,
+            "rx_deg": -90,
             "ry_deg": 0,
             "rz_deg": 0,
         },
@@ -261,7 +261,7 @@ def main():
                     dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
                     # 範囲フィルタリング
-                    if 100 <= dist_rob_mm <= 3000:
+                    if 100 <= dist_rob_mm <= 4000:
                         valid_triangles.append(tri)
                         valid_rob3d.append(rob3d)
                         valid_dist_mm.append(dist_rob_mm)
