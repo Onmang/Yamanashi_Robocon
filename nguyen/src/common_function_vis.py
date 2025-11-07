@@ -199,3 +199,8 @@ def draw_flag_triangles_debug(
             cv2.circle(vis, (cx, cy), 5, (0, 255, 0), -1)
 
     return vis, triangles
+
+
+
+
+
