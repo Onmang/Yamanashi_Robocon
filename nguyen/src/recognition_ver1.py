@@ -37,7 +37,7 @@ CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 
 # Arduino接続設定
-ARDUINO = True
+ARDUINO = False 
 if ARDUINO:
     global ser
 
@@ -640,7 +640,7 @@ def get_hsv_range(win):
     return (hl, sl, vl), (hh, sh, vh)
 
 
-def create_distance_trackbars(win, max_dist_cm=400):
+def create_distance_trackbars(win, max_dist_cm=500):
     """距離[cm]を調整するトラックバーを作成する"""
     # D405を想定した初期値 (7cm - 50cm)
     cv2.createTrackbar("Dist_min [cm]", win, 7, max_dist_cm, _noop)
