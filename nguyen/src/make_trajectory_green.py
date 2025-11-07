@@ -47,7 +47,7 @@ WIN_DIST  = "Distance Map"
 WIN_ALPHA = "alpha control"
 
 # arduino シリアル通信設定
-ARDUINO = False 
+ARDUINO = True 
 if ARDUINO:
     global ser
 
@@ -97,6 +97,7 @@ def main():
     # --------------------------------------------
     # 解像度とFPS
     W, H, FPS = 640, 480, 15
+    
 
     # RealSense D435i カメラ初期化
     cam_d435i = init_realsense_camera(
