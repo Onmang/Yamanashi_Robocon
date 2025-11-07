@@ -398,7 +398,7 @@ def main():
                         dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
                         # 距離がありえない値（極端にデカい/NaN）なら捨てる
-                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 2500):
+                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 2100):
 
                             # 角度[deg] ロボ+Y基準
                             angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
@@ -489,7 +489,9 @@ def main():
                     prev_angle = 0
                     prev_dist = 0
                     if ARDUINO:
-                        msg = "0000000000\n"  # mode='0', angle='0000', dist='0000'
+                        angle_code = encode_angle(0)
+                        dist_code = encode_distance(1, 300)
+                        msg = f"{4}{angle_code}{dist_code}\n"
                         try:
                             ser.write(msg.encode("ascii"))
                             # print(f"Sent(LOST): {msg.strip()}")

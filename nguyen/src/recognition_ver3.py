@@ -45,6 +45,8 @@ from common_function_vis import (
 )
 
 
+
+
 # GPIO PIN
 STOP_PIN = 23  # GPIO pin for stop signal
 GPIO.setmode(GPIO.BCM)  # GPIOのモードを"GPIO.BCM"に設定
@@ -52,8 +54,18 @@ GPIO.setmode(GPIO.BCM)  # GPIOのモードを"GPIO.BCM"に設定
 GPIO.setup(STOP_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # debug
-DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
-
+DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
+NEKO = True  # True: ネコ表示ON, False: ネコ表示OFF
+if NEKO:
+    # ネコ表情画像の読み込み（起動時に1回だけ）
+    NEKO_DIR = "./neko_img"
+    NEKO_IMAGES = {
+        "angry":  cv2.imread(f"{NEKO_DIR}/neko_angury.png"),
+        "confuse": cv2.imread(f"{NEKO_DIR}/neko_comfuse.png"),
+        "happy":  cv2.imread(f"{NEKO_DIR}/neko_happy.png"),
+        "smile":  cv2.imread(f"{NEKO_DIR}/neko_smile.png"),
+    }
+    _last_neko_name = None   # 直前に表示した名前を覚える
 # windname
 WINDOW_INPUT = "Input"
 WINDOW_MASK = "HSV Mask Morph"
@@ -62,7 +74,7 @@ WINDOW_RESULT = "Result"
 # しきい値関係
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MIN_FLAG = 100  # flag用三角形最小面積
+AREA_MIN_FLAG = 120  # flag用三角形最小面積
 AREA_MIN_POST = 150  # post用三角形最小面積
 ALPHA_VAL = 0.8  # 安全pathマージン
 CHANGE_CAMERA_THRE_D435I = 600  # mm
@@ -83,10 +95,13 @@ dist_max_cm_goal_2 = 80  # cm
 # わからないときの回転角度
 angle_if_lost = 45  # deg
 
+# わからないときの移動距離
+dist_if_lost = 300
+
 # 打つときの閾値
 hit_angle_1 = 10  # deg
-hit_dis_1 = 2000  # mm
-hit_delay_time = 3.0  # sec 打つ動作の待機時間
+hit_dis_1 = 1500  # mm
+hit_delay_time = 10.0  # sec 打つ動作の待機時間
 
 # arduino シリアル通信設定
 ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF
@@ -111,6 +126,7 @@ if ARDUINO:
 def main():
     cam_d435i = None
     cam_d405 = None
+    if NEKO: init_neko_window()  # ← 最初に1回だけ
     # --------------------------------------------
     # windown関係
     # --------------------------------------------
@@ -194,7 +210,7 @@ def main():
         # init activate cam
         time.sleep(1.0)  # カメラ安定化待ち
         print("[DEBUG] Camera initialized.")
-        activate_cam = cam_d405
+        activate_cam = cam_d435i
 
         # --------------------------------------------
         # メインループ
@@ -208,13 +224,16 @@ def main():
         rasp_mode = 100
         hit_ready = False
         Hit_n = 1
+        delay_after_hit = False
 
         # main loop
         while True:
             # 緊急停止入力
             if GPIO.input(STOP_PIN) == GPIO.HIGH:  # GPIO23が"1"のとき
-                print("[Debug] Emergency Stop Activated!")
+                # print("[Debug] Emergency Stop Activated!")
                 Hit_n = 1
+                if activate_cam is not cam_d405:
+                    activate_cam = cam_d405
                 continue
 
             # ここにメインループの処理を記述
@@ -245,6 +264,7 @@ def main():
             match rasp_mode:
                 ### ボール探索モード ###
                 case 100:
+                    if DEBUG: print(f"[Debug] case {rasp_mode}: Search ball...")
                     # 前処理の2値化
                     mask_morph, vis = preprocess_depth_and_hsv(
                         color_image,
@@ -271,58 +291,59 @@ def main():
                         circles, depth_image, activate_cam
                     )
 
-                    # 3打目以降はpath確認
-                    if recog_res and rob3d[2] < 1000 and Hit_n >= 3:
-                        # 前処理の2値化
-                        mask_morph_add, vis = preprocess_depth_and_hsv(
-                            color_image,
-                            depth_image,
-                            activate_cam,
-                            dist_min_cm=None,
-                            dist_max_cm=None,
-                            gaus_k=gaus_k,
-                            sigmaX=sigmaX,
-                            hsv_lo=white_lo,
-                            hsv_hi=white_hi,
-                        )
+                    # # 3打目以降はpath確認
+                    # if recog_res and rob3d[2] < 1000 and Hit_n >= 3:
+                    #     # 前処理の2値化
+                    #     mask_morph_add, vis = preprocess_depth_and_hsv(
+                    #         color_image,
+                    #         depth_image,
+                    #         activate_cam,
+                    #         dist_min_cm=None,
+                    #         dist_max_cm=None,
+                    #         gaus_k=gaus_k,
+                    #         sigmaX=sigmaX,
+                    #         hsv_lo=white_lo,
+                    #         hsv_hi=white_hi,
+                    #     )
 
-                        recog_res, cam3d, rob3d = check_path_safety(
-                            mask_morph_add, depth_image, activate_cam, alpha=ALPHA_VAL
-                        )
+                    #     recog_res, cam3d, rob3d = check_path_safety(
+                    #         mask_morph_add, depth_image, activate_cam, alpha=ALPHA_VAL
+                    #     )
 
-                        # --- ロボット位置（仮） ---
-                        h, w = vis.shape[:2]
-                        robot_xy = (w // 2, h - 10)
+                    #     # --- ロボット位置（仮） ---
+                    #     h, w = vis.shape[:2]
+                    #     robot_xy = (w // 2, h - 10)
 
-                        # ゴールpath確認
-                        path_clear, dist = check_goal_path(
-                            mask_morph_add,
-                            robot_xy=robot_xy,
-                            goal_xy=(c_x, c_y),
-                            alpha=ALPHA_VAL,
-                        )
-                        # --- 角度で探す代替ルート ---
-                        if not path_clear:
-                            best_h_pt, _ = find_best_horizontal(
-                                dist_img=dist,
-                                origin=robot_xy,
-                                goal_y=c_y,
-                                x_step=5,
-                                step_along_line=3,
-                                min_safe_dist=10.0,
-                            )
-                            # --- 3D座標計算 ---
-                            cam3d, rob3d = project_center_to_robot(
-                                u=best_h_pt[0],
-                                v=best_h_pt[1],
-                                depth_image=depth_image,
-                                depth_scale=activate_cam.depth_scale,
-                                intr=activate_cam.intr,
-                                T_cam2rob=activate_cam.T_cam2rob,
-                                roi=7,
-                            )
+                    #     # ゴールpath確認
+                    #     path_clear, dist = check_goal_path(
+                    #         mask_morph_add,
+                    #         robot_xy=robot_xy,
+                    #         goal_xy=(c_x, c_y),
+                    #         alpha=ALPHA_VAL,
+                    #     )
+                    #     # --- 角度で探す代替ルート ---
+                    #     if not path_clear:
+                    #         best_h_pt, _ = find_best_horizontal(
+                    #             dist_img=dist,
+                    #             origin=robot_xy,
+                    #             goal_y=c_y,
+                    #             x_step=5,
+                    #             step_along_line=3,
+                    #             min_safe_dist=10.0,
+                    #         )
+                    #         # --- 3D座標計算 ---
+                    #         cam3d, rob3d = project_center_to_robot(
+                    #             u=best_h_pt[0],
+                    #             v=best_h_pt[1],
+                    #             depth_image=depth_image,
+                    #             depth_scale=activate_cam.depth_scale,
+                    #             intr=activate_cam.intr,
+                    #             T_cam2rob=activate_cam.T_cam2rob,
+                    #             roi=7,
+                    #         )
                 ### ゴール探索モード ###
                 case 200:
+                    if DEBUG: print(f"[Debug] case {rasp_mode}: Searching Goal...")
                     if activate_cam is not cam_d435i:
                         activate_cam = cam_d435i
                     # 前処理の2値化
@@ -365,7 +386,7 @@ def main():
                         )
                     )
 
-                ### ゴールが近すぎる場合 ###
+                ## ゴールが近すぎる場合 ###
                 case 210:
                     if activate_cam is not cam_d435i:
                         activate_cam = cam_d435i
@@ -388,12 +409,17 @@ def main():
                         activate_cam,
                         area_min_label=AREA_MIN,
                         area_min_post=AREA_MIN_POST,
-                        aspect_min=3.0,
+                        aspect_min=6.0,
                         approx_eps_ratio=0.03,
                     )
 
+                ### 打つ　###
+                case 300:
+                    print(f"[Debug] case {rasp_mode}: Hitting the ball...")
+                    pass
                 ### 自由歩きモード ###
                 case 400:
+                    if DEBUG: print(f"[Debug] case {rasp_mode}: Free Walk Mode...")
                     if activate_cam is not cam_d435i:
                         activate_cam = cam_d435i
 
@@ -435,6 +461,7 @@ def main():
 
                 # 表示情報
                 state = "TRACK"
+                if NEKO: show_neko("smile", wait_ms=0) 
             else:
                 # 見失いカウンタ増加
                 miss_count += 1
@@ -454,6 +481,7 @@ def main():
                 case 100:
                     match state:
                         case "TRACK":
+                            if DEBUG: print(f"[Debug] case {rasp_mode} in step 2: Tracking ball...")
                             # カメラ変更判定
                             _, _, Zc = cam3d
                             activate_cam = change_camera(
@@ -474,22 +502,30 @@ def main():
                                 send_dist_mm = dist_mm
                                 send_angle_deg = angle_deg
                         case "HOLD":
+                            if DEBUG: print(f"[Debug] case {rasp_mode} in step 2: Holding ball...")
                             mode = 1
                             send_dist_mm = prev_dist
                             send_angle_deg = prev_angle
                         case "LOST":
-                            mode, send_dist_mm, send_angle_deg, lost_fl = (
-                                excute_state_LOST_100(
-                                    miss_count, thres_1=30, thres_2=75, thres_3=75 * 2
-                                )
-                            )
-                            # がちで見失った
-                            if lost_fl:
-                                rasp_mode = 400
+                            print(f"[Debug] case {rasp_mode} in step 2: Lost ball...")
+                            mode = 4
+                            send_dist_mm = dist_if_lost
+                            send_angle_deg = 0
+                            if NEKO: show_neko("confuse", wait_ms=0)   # ここで表示
+
+                            # mode, send_dist_mm, send_angle_deg, lost_fl = (
+                            #     excute_state_LOST_100(
+                            #         miss_count, thres_1=30, thres_2=75, thres_3=75 * 2
+                            #     )
+                            # )
+                            # # がちで見失った
+                            # if lost_fl:
+                            #     rasp_mode = 400
                 ### ゴールに向く ###
                 case 200:
                     match state:
                         case "TRACK":
+                            if DEBUG: print(f"[Debug] case {rasp_mode} in step 2: Tracking Goal...")
                             if abs(angle_deg) <= angle_th_1:  # 角度閾値OK
                                 ###############
                                 # コース確認必要
@@ -516,47 +552,39 @@ def main():
                                     send_dist_mm = 0
                                     send_angle_deg = 0
                                 rasp_mode = 300
-                                # # --- ロボット位置（仮） ---
-                                # h, w = vis.shape[:2]
-                                # robot_xy = (w // 2, h - 10)
-                                # # ゴールpath確認
-                                # path_clear, dist = check_goal_path(mask_morph, robot_xy=robot_xy, goal_xy=goal_xy_pixel, alpha=ALPHA_VAL)
-                                # # --- 角度で探す代替ルート ---
-                                # if path_clear:
-                                #     activate_cam = cam_d405
-                                #     rasp_mode = 300
-                                #     flag_offset = None
-                                # else:
-                                #     best_h_pt, _ = find_best_horizontal(
-                                #         dist_img=dist,
-                                #         origin=robot_xy,
-                                #         goal_y=goal_xy_pixel[1],
-                                #         x_step=5,
-                                #         step_along_line=3,
-                                #         min_safe_dist=2.0
-                                #     )
+
                             else:  # まだ
                                 mode = 1
                                 send_dist_mm = 0
                                 send_angle_deg = angle_deg
                         case "HOLD":
+                            if DEBUG: print(f"[Debug] case {rasp_mode} in step 2: Holding Goal...")
                             mode = 1
                             send_dist_mm = 0
                             send_angle_deg = prev_angle
                         case "LOST":
-                            mode = 3  # 超音波探索
+                            if DEBUG: print(f"[Debug] case {rasp_mode} in step 2: Lost Goal...")
+                            if NEKO: show_neko("angury", wait_ms=0)
+                            # mode = 3  # 超音波探索
+                            # send_dist_mm = 0
+                            # send_angle_deg = 0
+                            mode = 4  
                             send_dist_mm = 0
-                            send_angle_deg = 0
-                            # if (
-                            #     miss_count > FPS * 10
-                            # ):  # 10秒以上見失ったらボール探索へ戻る
-                            #     rasp_mode = 210
+                            send_angle_deg = -20
+                            if (
+                                miss_count > FPS * 10
+                            ):  # 10秒以上見失ったらボール探索へ戻る
+                                rasp_mode = 210
                 case 300:
                     if hit_ready:
+                        print(f"[Debug] case {rasp_mode} in step 2: Ready to hit ball!!!")
+                        print(f"[Debug] Hitting now! this is hit count: {Hit_n}")
+                        
                         # 送信
                         mode = 2
                         send_dist_mm = hit_dis_1
                         send_angle_deg = 0
+                        delay_after_hit = True
 
                         # 初期化
                         prev_angle = 0
@@ -568,14 +596,24 @@ def main():
                         hit_ready = False
                         activate_cam = cam_d435i
                         rasp_mode = 100
+                        if NEKO: show_neko("happy", wait_ms=0)
+                        print("[Debug] delay for move back... mode [2]")
+                        time.sleep(1.0)
+                        print("[Debug] move back finished.")
+
                     else:
                         # 送信
                         mode = 4
                         send_dist_mm = -dist_move  # 70mm バック
                         send_angle_deg = 0
-                        # 打つ準備
+                        print("[Debug] delay for move back... mode [4]")
+                        time.sleep(0.5)
+                        print("[Debug] move back finished.")
+                        
+                        # 打つ準備            
                         hit_ready = True
                 case 400:
+                    if DEBUG: print(f"[Debug] case {rasp_mode} in step 2: Free Walk Mode...")
                     match state:
                         case "TRACK":
                             mode = 1
@@ -624,9 +662,11 @@ def main():
                     ser.write(msg.encode("ascii"))
                     # if DEBUG:
                     # print(f"[Debug] Sent{(state)}: {msg.strip()}")
-                    if rasp_mode == 300 and hit_ready:
+                    if delay_after_hit:
                         print("[Debug] Delay for hitting:", hit_delay_time)
                         time.sleep(hit_delay_time)  # 打つ時間待機
+                        print("[Debug] Delay finished.")
+                        delay_after_hit = False
                 except Exception as e:
                     print("Failed to write to serial:", e)
                     pass
@@ -647,6 +687,34 @@ def main():
             cam_d405.pipeline.stop()
         if DEBUG:
             cv2.destroyAllWindows()
+
+# --- 上のほう（main() の前とか）に置く ---
+def init_neko_window():
+    """顔表示用ウィンドウを最初に作成"""
+    cv2.namedWindow("NEKO_FACE", cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty("NEKO_FACE", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+
+def show_neko(name, wait_ms=0):
+    global _last_neko_name
+
+    # 前回と同じなら何もしないで帰る
+    if name == _last_neko_name:
+        return
+
+    img = NEKO_IMAGES.get(name)
+    if img is None:
+        print(f"[NEKO] image not found: {name}")
+        return
+
+    cv2.imshow("NEKO_FACE", img)
+    if wait_ms > 0:
+        cv2.waitKey(wait_ms)
+    else:
+        cv2.waitKey(1)
+
+    # 今回出したやつを覚える
+    _last_neko_name = name
 
 
 if __name__ == "__main__":

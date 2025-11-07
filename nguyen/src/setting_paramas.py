@@ -439,7 +439,7 @@ def main():
                 triangles = detect_triangles(
                     mask_morph,
                     area_min_label=100,
-                    area_min=150,
+                    area_min=120,
                     epsilon_ratio=0.08,
                 )
                 recog_res, rob3d, cam3d, goal_xy_pixel = evaluate_triangles_detection(
