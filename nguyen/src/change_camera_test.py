@@ -17,6 +17,13 @@ from common_function import (
     load_hsv_from_json,
     project_center_to_robot,
     compute_center_distance,
+    PARAM_PATH_DIS_D435I,
+    PARAM_PATH_HSV,
+    PARAM_PATH_DIS_D405,
+    PARAM_PATH_DIS_GREEN,
+    PARAM_HOUGH_D405,
+    PARAM_HOUGH_D435I,
+    PARAM_FILTER,
 )
 
 CHANGE_CAMERA_THRE_D435I = 350 # mm
@@ -28,43 +35,55 @@ def main():
     # --------------------------------------------
     # 解像度とFPS
     W, H, FPS = 640, 480, 15
+    try:
+        # RealSense D435i カメラ初期化
+        cam_d435i = init_realsense_camera(
+            name="d435i",
+            serial="949122070535",  # 実機のシリアル
+            width=W,
+            height=H,
+            fps=FPS,
+            extrinsic_guess={
+                "tx": -(32.5 * 0.001),
+                "ty": -50 * 0.001,
+                "tz": 200 * 0.001,
+                "rx_deg": -90,
+                "ry_deg": 0,
+                "rz_deg": 0,
+            },
+            dis_param_path=PARAM_PATH_DIS_D435I,
+            hough_param_path=PARAM_HOUGH_D435I,
+            ball_hsv_param_path=PARAM_PATH_HSV[2],
+        )
 
-    # RealSense D435i カメラ初期化
-    cam_d435i = init_realsense_camera(
-        name="d435i",
-        serial="949122070535",  # 実機のシリアル
-        width=W,
-        height=H,
-        fps=FPS,
-        extrinsic_guess={
-            "tx": -(32.5 * 0.001),
-            "ty": -50 * 0.001,
-            "tz": 200 * 0.001,
-            "rx_deg": -103,
-            "ry_deg": 0,
-            "rz_deg": 0,
-        },
-    )
-
-    print("D435i configuration complete.")        
-    # RealSense D405 カメラ初期化
-    cam_d405 = init_realsense_camera(
+        # RealSense D405 カメラ初期化
+        # d405はcam3d
+        cam_d405 = init_realsense_camera(
             name="d405",
             serial="218622274519",  # 実機のシリアル
             width=W,
             height=H,
             fps=FPS,
             extrinsic_guess={
-                  "tx": 0.0,
+                "tx": 0.0,
                 "ty": 0.0,
                 "tz": 0.0,
-                "rx_deg": 0,
+                "rx_deg": -90,
                 "ry_deg": 0,
                 "rz_deg": 0,
             },
+            dis_param_path=PARAM_PATH_DIS_D405,
+            hough_param_path=PARAM_HOUGH_D405,
+            ball_hsv_param_path=PARAM_PATH_HSV[9],
         )
+        
+    except Exception as e:
+        print("Camera initialization failed:", e)
+        return
+    finally:
+        time.sleep(2)  # カメラ安定化待ち
 
-    # windown setup
+    # window setup
     cv2.namedWindow("Input", cv2.WINDOW_NORMAL)
     cv2.moveWindow("Input", 50, 60)
 
