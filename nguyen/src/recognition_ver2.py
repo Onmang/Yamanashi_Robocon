@@ -8,6 +8,15 @@ import time
 import cv2
 import numpy as np
 import serial
+import RPi.GPIO as GPIO             #GPIO用のモジュールをインポート
+
+
+# GPIO PIN
+STOP_PIN = 23  # GPIO pin for stop signal
+GPIO.setmode(GPIO.BCM)              #GPIOのモードを"GPIO.BCM"に設定
+#GPIO23を入力モードに設定
+GPIO.setup(STOP_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
 
 from common_function import (
     compute_angles_from_position,
@@ -31,16 +40,16 @@ from common_function import (
 )
 
 # debug
-DEBUG = False  # True: デバッグモードON, False: デバッグモードOFF
+DEBUG = True    # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
-CHANGE_CAMERA_THRE_D435I = 350 # mm
-CHANGE_CAMERA_THRE_D405 = 550 # mm
-STOP_DIS_D405 = 170 # mm
+CHANGE_CAMERA_THRE_D435I = 600 # mm
+CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I+150 # mm
+STOP_DIS_D405 = 70 # mm
 
 # arduino シリアル通信設定
-ARDUINO = True 
+ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF 
 if ARDUINO:
     global ser
 
@@ -87,47 +96,6 @@ def main():
     # 解像度とFPS
     W, H, FPS = 640, 480, 15
 
-    # RealSense D435i カメラ初期化
-    cam_d435i = init_realsense_camera(
-        name="d435i",
-        serial="949122070535",  # 実機のシリアル
-        width=W,
-        height=H,
-        fps=FPS,
-        extrinsic_guess={
-            "tx": -(32.5 * 0.001),
-            "ty": -50 * 0.001,
-            "tz": 200 * 0.001,
-            "rx_deg": -90, 
-            "ry_deg": 0,
-            "rz_deg": 0,
-        },
-        dis_param_path=PARAM_PATH_DIS_D435I,
-        hough_param_path=PARAM_HOUGH_D435I,
-        ball_hsv_param_path=PARAM_PATH_HSV[2],
-    )
-
-    # RealSense D405 カメラ初期化
-    # d405はcam3d
-    cam_d405 = init_realsense_camera(
-            name="d405",        
-            serial="218622274519",  # 実機のシリアル
-            width=W,
-            height=H,
-            fps=FPS,
-            extrinsic_guess={
-                "tx": 0.0,
-                "ty": 0.0,
-                "tz": 0.0,
-                "rx_deg": -90,
-                "ry_deg": 0,
-                "rz_deg": 0,
-            },
-            dis_param_path=PARAM_PATH_DIS_D405,
-            hough_param_path=PARAM_HOUGH_D405,
-            ball_hsv_param_path=PARAM_PATH_HSV[9],
-    )
-
     # --------------------------------------------
     # windown関係
     # --------------------------------------------
@@ -161,12 +129,55 @@ def main():
     # メインループ
     # --------------------------------------------
     try:
+        # RealSense D435i カメラ初期化
+        cam_d435i = init_realsense_camera(
+            name="d435i",
+            serial="949122070535",  # 実機のシリアル
+            width=W,
+            height=H,
+            fps=FPS,
+            extrinsic_guess={
+                "tx": -(32.5 * 0.001),
+                "ty": -50 * 0.001,
+                "tz": 200 * 0.001,
+                "rx_deg": -90, 
+                "ry_deg": 0,
+                "rz_deg": 0,
+            },
+            dis_param_path=PARAM_PATH_DIS_D435I,
+            hough_param_path=PARAM_HOUGH_D435I,
+            ball_hsv_param_path=PARAM_PATH_HSV[2],
+        )
+        # RealSense D405 カメラ初期化
+        # d405はcam3d
+        cam_d405 = init_realsense_camera(
+                name="d405",        
+                serial="218622274519",  # 実機のシリアル
+                width=W,
+                height=H,
+                fps=FPS,
+                extrinsic_guess={
+                    "tx": 0.0,
+                    "ty": 0.0,
+                    "tz": 0.0,
+                    "rx_deg": -90,
+                    "ry_deg": 0,
+                    "rz_deg": 0,
+                },
+                dis_param_path=PARAM_PATH_DIS_D405,
+                hough_param_path=PARAM_HOUGH_D405,
+                ball_hsv_param_path=PARAM_PATH_HSV[9],
+        )
+
         # アクティブカメラ
+        time.sleep(1)  # カメラ安定化待ち
         activate_cam = cam_d435i
         mode = 1
         # 送信フラグ
         EMA_ALPHA = 0.30  # 0.1～0.5 で調整（大きいほど追従が速い／ノイズに弱い）
         MISS_LIMIT = 5  # 短期見失いの許容量（フレーム数）
+
+        D405_STOP_FLAG = False
 
         prev_angle = 0  # 直近の平滑化角度[deg]
         prev_dist = 0  # 直近の平滑化距離[mm]
@@ -175,8 +186,14 @@ def main():
         print("main loop....")
         # main loop
         while True:
+            # 緊急停止入力
+            if GPIO.input(STOP_PIN) == GPIO.HIGH:  #GPIO23が"1"のとき
+                print("[Debug] Emergency Stop Activated!")
+                continue
             circles = None
-
+            if D405_STOP_FLAG:
+                print("[Debug] D405 Stop Flag Activated!")
+                continue
             # get rgbd images
             color_image, depth_image = get_rgbd_images(activate_cam)
 
@@ -381,7 +398,7 @@ def main():
                         dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
                         # 距離がありえない値（極端にデカい/NaN）なら捨てる
-                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 4000):
+                        if (not np.isnan(dist_rob_mm)) and (dist_rob_mm < 2500):
 
                             # 角度[deg] ロボ+Y基準
                             angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
@@ -398,6 +415,7 @@ def main():
                             # [TEST]しきい値以内なら 0 距離を送る
                             dist_mm_thresh = STOP_DIS_D405  # mm D405の閾値
                             dist_mm_send = dist_mm if dist_mm > dist_mm_thresh else 0
+                            D405_STOP_FLAG = True if dist_mm < dist_mm_thresh else False
 
                             # 前回値更新
                             prev_angle = angle_deg
@@ -465,6 +483,8 @@ def main():
                             # print("Failed to write to serial:", e)
                 else:
                     # LOST: 安全化（ゼロ送信、直前値もリセット）
+                    if activate_cam is not cam_d435i:
+                        activate_cam = cam_d435i
                     state = "LOST"
                     prev_angle = 0
                     prev_dist = 0
@@ -505,8 +525,10 @@ def main():
     finally:
         if ARDUINO and ser is not None:
             ser.close()
-        cam_d435i.pipeline.stop()
-        cam_d405.pipeline.stop()
+        if cam_d435i is not None:
+            cam_d435i.pipeline.stop()
+        if cam_d405 is not None:
+            cam_d405.pipeline.stop()       
         if DEBUG:
             cv2.destroyAllWindows()
 
