@@ -13,17 +13,17 @@ PARAM_PATH_DIS_D435I = "distance_params.json"
 PARAM_PATH_DIS_GREEN = "distance_green_params.json"
 PARAM_PATH_DIS_D405 = "distance_d405_params.json"
 PARAM_PATH_HSV = [
-    "hsv_params_red.json", #0
-    "hsv_params_yellow.json", #1
-    "hsv_params_blue.json", #2
-    "hsv_params_flag.json", #3
-    "hsv_params_green.json", #4
-    "hsv_params_teaground.json", #5
-    "hsv_params_laf.json", #6
-    "hsv_params_banker.json", #7
-    "hsv_params_white.json",  #8 コース２のグリーンとゴール付近
-    "hsv_params_blue_d405.json", #9
-    "hsv_params_post.json", #10
+    "hsv_params_red.json",  # 0
+    "hsv_params_yellow.json",  # 1
+    "hsv_params_blue.json",  # 2
+    "hsv_params_flag.json",  # 3
+    "hsv_params_green.json",  # 4
+    "hsv_params_teaground.json",  # 5
+    "hsv_params_laf.json",  # 6
+    "hsv_params_banker.json",  # 7
+    "hsv_params_white.json",  # 8 コース２のグリーンとゴール付近
+    "hsv_params_blue_d405.json",  # 9
+    "hsv_params_post.json",  # 10
 ]  # 保存先パス選択
 PARAM_HOUGH_D435I = "houghcircles_params.json"
 PARAM_HOUGH_D405 = "houghcircles_d405_params.json"
@@ -32,6 +32,7 @@ PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保�
 
 class CameraParam:
     """カメラパラメータ格納クラス"""
+
     def __init__(self, T_mtrix):
         self.intr = None  # pyrealsense2.intrinsics オブジェクト
         self.fx = 0
@@ -43,11 +44,11 @@ class CameraParam:
         self.dist_min_cm = 0  # フィルター距離下限 [cm]
         self.dist_max_cm = 4000  # フィルター距離上限 [cm]
         self.T_cam2rob = np.eye(4)  # カメラ→ロボット座標変換行列（4x4同次行列）
-        self.minDist=0
-        self.param1=0
-        self.param2=0
-        self.minRadius=0
-        self.maxRadius=0
+        self.minDist = 0
+        self.param1 = 0
+        self.param2 = 0
+        self.minRadius = 0
+        self.maxRadius = 0
         self.T_cam2rob = T_mtrix
 
     def add_ins_param(self, intr):
@@ -87,20 +88,20 @@ class CameraParam_ver2:
         # 深度パラメータ
         self.depth_scale = 0.0
         self.stereo_baseline = 0.0  # mm
-        self.minDist=0
-        self.param1=0
-        self.param2=0
-        self.minRadius=0
-        self.maxRadius=0
+        self.minDist = 0
+        self.param1 = 0
+        self.param2 = 0
+        self.minRadius = 0
+        self.maxRadius = 0
         self.dist_min_cm = 0  # フィルター距離下限 [cm]
         self.dist_max_cm = 300  # フィルター距離上限 [cm]
         self.dist_min_raw = 0  # フィルター距離下限 (深度画像の生値)
         self.dist_max_raw = 0  # フィルター距離上限 (深度画像の生値)
-        
+
         # hsvフィルタパラメータ
-        self.ball_lo=(0,0,0)
-        self.ball_hi=(0,0,0)
-        
+        self.ball_lo = (0, 0, 0)
+        self.ball_hi = (0, 0, 0)
+
         # 外部パラメータ（カメラ→ロボット）
         self.T_cam2rob = np.eye(4)
 
@@ -124,7 +125,9 @@ class CameraParam_ver2:
         )
 
     def print_info(self):
-        print(f"\n=================== CameraParam [{self.name}] info ===================")
+        print(
+            f"\n=================== CameraParam [{self.name}] info ==================="
+        )
         print(f"[{self.name}] Intrinsics: {self.intr.width}x{self.intr.height}")
         K = np.array(
             [
@@ -137,15 +140,27 @@ class CameraParam_ver2:
         print(f"[{self.name}] depth_scale = {self.depth_scale}")
         print(f"[{self.name}] baseline(mm) = {self.stereo_baseline}")
         print(f"[{self.name}] T_cam2rob =\n{self.T_cam2rob}")
-        print(f"[{self.name}] Filter distance [cm]: {self.dist_min_cm} - {self.dist_max_cm}")
-        print(f"[{self.name}] Hough params: minDist={self.minDist}, param1={self.param1}, param2={self.param2}, minRadius={self.minRadius}, maxRadius={self.maxRadius}")
+        print(
+            f"[{self.name}] Filter distance [cm]: {self.dist_min_cm} - {self.dist_max_cm}"
+        )
+        print(
+            f"[{self.name}] Hough params: minDist={self.minDist}, param1={self.param1}, param2={self.param2}, minRadius={self.minRadius}, maxRadius={self.maxRadius}"
+        )
         print(f"[{self.name}] Ball HSV lo={self.ball_lo}, hi={self.ball_hi}")
         print("===================================================================\n")
 
 
 # カメラ初期化のヘルパー関数
 def init_realsense_camera(
-    name, serial=None, width=848, height=480, fps=30, extrinsic_guess=None, dis_param_path=None, hough_param_path=None, ball_hsv_param_path=None
+    name,
+    serial=None,
+    width=848,
+    height=480,
+    fps=30,
+    extrinsic_guess=None,
+    dis_param_path=None,
+    hough_param_path=None,
+    ball_hsv_param_path=None,
 ):
     """
     name:    "front", "side" など
@@ -200,22 +215,21 @@ def init_realsense_camera(
     cam.pipeline = pipeline
     cam.profile = profile
     cam.align = align
-    
+
     # 距離フィルタのデフォルト値
     cam.dist_min_cm, cam.dist_max_cm = load_filter_distance_from_json(dis_param_path)
-    
+
     # ハフ変換パラメータ読み込み
-    cam.minDist, cam.param1, cam.param2, cam.minRadius, cam.maxRadius = load_hough_params_from_json(
-        hough_param_path
+    cam.minDist, cam.param1, cam.param2, cam.minRadius, cam.maxRadius = (
+        load_hough_params_from_json(hough_param_path)
     )
-    
+
     # 距離によるフィルタリングの生値計算
     cam.dist_min_raw = int((cam.dist_min_cm / 100.0) / cam.depth_scale)
     cam.dist_max_raw = int((cam.dist_max_cm / 100.0) / cam.depth_scale)
-    
+
     # hsvフィルタパラメータ読み込み
     cam.ball_lo, cam.ball_hi = load_hsv_from_json(ball_hsv_param_path)
-
 
     cam.print_info()
     return cam
@@ -336,6 +350,7 @@ def encode_distance(sign_flag=1, distance_mm=0):
     """
     dis_send = f"{sign_flag}{distance_mm % 10000:04d}"
     return dis_send
+
 
 def encode_distance_ver2(distance_mm=0):
     """
@@ -482,7 +497,10 @@ def compute_center_distance(depth_image, depth_scale, W, H, cx, cy, roi_size=10)
 
     return center_dist_m, center_dist_mm, avg_dist_raw, (x1, y1), (x2, y2)
 
-def change_camera(activate_cam, cam_d435i, cam_d405, distance_mm, thre_d435i=800, thre_d405=1000):
+
+def change_camera(
+    activate_cam, cam_d435i, cam_d405, distance_mm, thre_d435i=800, thre_d405=1000
+):
     if activate_cam == cam_d435i and distance_mm < thre_d435i:
         activate_cam = cam_d405
         # print("Switched to D405")
@@ -491,34 +509,41 @@ def change_camera(activate_cam, cam_d435i, cam_d405, distance_mm, thre_d435i=800
         # print("Switched to D435i")
     return activate_cam
 
+
 def get_rgbd_images(activate_cam):
-        # Get frameset of color and depth
-        frames = activate_cam.pipeline.wait_for_frames()
+    # Get frameset of color and depth
+    frames = activate_cam.pipeline.wait_for_frames()
 
-        # Align the depth frame to color frame
-        aligned_frames = activate_cam.align.process(frames)
+    # Align the depth frame to color frame
+    aligned_frames = activate_cam.align.process(frames)
 
-        # Get aligned frames
-        depth_frame = aligned_frames.get_depth_frame()
-        color_frame = aligned_frames.get_color_frame()
+    # Get aligned frames
+    depth_frame = aligned_frames.get_depth_frame()
+    color_frame = aligned_frames.get_color_frame()
 
-        if not depth_frame or not color_frame:
-            return None, None
+    if not depth_frame or not color_frame:
+        return None, None
 
-        depth_image = np.asanyarray(depth_frame.get_data())
-        color_image = np.asanyarray(color_frame.get_data())
-        
-        return color_image, depth_image
-    
-    
+    depth_image = np.asanyarray(depth_frame.get_data())
+    color_image = np.asanyarray(color_frame.get_data())
+
+    return color_image, depth_image
+
+
 # --------------------------------------------
 # 画像入力→距離マスク＋フィルター、ガウシアン、hsvマスク、モルフォロジー処理
 # --------------------------------------------
-def preprocess_depth_and_hsv(color_image, depth_image, 
-                             activate_cam, 
-                             dist_min_cm=None, dist_max_cm=None,
-                             gaus_k=7, sigmaX=0,
-                             hsv_lo=(0,0,0), hsv_hi=(179,255,255)):
+def preprocess_depth_and_hsv(
+    color_image,
+    depth_image,
+    activate_cam,
+    dist_min_cm=None,
+    dist_max_cm=None,
+    gaus_k=7,
+    sigmaX=0,
+    hsv_lo=(0, 0, 0),
+    hsv_hi=(179, 255, 255),
+):
     # カメラの値利用するかどうか
     if dist_min_cm is None or dist_max_cm is None:
         dist_min_raw = activate_cam.dist_min_raw
@@ -526,37 +551,30 @@ def preprocess_depth_and_hsv(color_image, depth_image,
     else:
         dist_min_raw = int((dist_min_cm / 100.0) / activate_cam.depth_scale)
         dist_max_raw = int((dist_max_cm / 100.0) / activate_cam.depth_scale)
-    
+
     # 指定範囲内のマスクを作成
     mask = cv2.inRange(depth_image, dist_min_raw, dist_max_raw)
-    
+
     # マスクを適用してフィルタリング
     filtered_image = cv2.bitwise_and(color_image, color_image, mask=mask)
-    
+
     ## ガウシアンフィルター ##
     filtered_image = cv2.GaussianBlur(filtered_image, (gaus_k, gaus_k), sigmaX)
 
     ## HSVマスク作成 ##
     hsv = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2HSV)
-    hsv_mask = cv2.inRange(
-                hsv, np.array(hsv_lo, np.uint8), np.array(hsv_hi, np.uint8)
-            )
-    
+    hsv_mask = cv2.inRange(hsv, np.array(hsv_lo, np.uint8), np.array(hsv_hi, np.uint8))
+
     ## モルフォロジー変換（オープニング＋クロージング）##
     kernel = np.ones((3, 3), np.uint8)
-    mask_morph = cv2.morphologyEx(
-                hsv_mask, cv2.MORPH_OPEN, kernel, iterations=3
-            )
-    mask_morph = cv2.morphologyEx(
-                mask_morph, cv2.MORPH_CLOSE, kernel, iterations=3
-            )
-    
-                # モルフォロジーマスク適用
-    vis = cv2.bitwise_and(
-                filtered_image, filtered_image, mask=mask_morph
-            ).copy()
-    
+    mask_morph = cv2.morphologyEx(hsv_mask, cv2.MORPH_OPEN, kernel, iterations=3)
+    mask_morph = cv2.morphologyEx(mask_morph, cv2.MORPH_CLOSE, kernel, iterations=3)
+
+    # モルフォロジーマスク適用
+    vis = cv2.bitwise_and(filtered_image, filtered_image, mask=mask_morph).copy()
+
     return mask_morph, vis
+
 
 # --------------------------------------------
 # ラベリング処理→円形度→ハフ変換
@@ -564,13 +582,13 @@ def preprocess_depth_and_hsv(color_image, depth_image,
 def circularity_and_hough(mask_morph, vis, activate_cam, area_min=100, circ_min=0.80):
     # 初期化
     circles = None
-    
+
     ## ラベリング処理 ##
     retval, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_morph)
-                    
+
     # 円形度良いものだけ抜き出す
     candidate_mask = np.zeros_like(mask_morph)  # ここに有望な領域だけ塗る
-    
+
     for i in range(1, retval):  # 0は背景なのでスキップ
         x, y, w, h, area = stats[i]
         cx, cy = int(centroids[i][0]), int(centroids[i][1])
@@ -585,9 +603,7 @@ def circularity_and_hough(mask_morph, vis, activate_cam, area_min=100, circ_min=
 
         # このラベル領域内だけで輪郭をとる
         roi = blob_mask[y : y + h, x : x + w]
-        contours, _ = cv2.findContours(
-                    roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-                )
+        contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         is_round_enough = False  # フラグ
         for cnt in contours:
@@ -597,7 +613,7 @@ def circularity_and_hough(mask_morph, vis, activate_cam, area_min=100, circ_min=
 
             peri = cv2.arcLength(cnt, True)
             if peri <= 0:
-                continue     # 一応
+                continue  # 一応
 
             circularity = (4.0 * np.pi * area_cnt) / (peri * peri)
 
@@ -619,17 +635,18 @@ def circularity_and_hough(mask_morph, vis, activate_cam, area_min=100, circ_min=
             gray_for_hough = cv2.bitwise_and(gray, gray, mask=candidate_mask)
 
             circles = cv2.HoughCircles(
-                    gray_for_hough,
-                    cv2.HOUGH_GRADIENT,
-                    dp=1,
-                    minDist=activate_cam.minDist,
-                    param1=activate_cam.param1,
-                    param2=activate_cam.param2,
-                    minRadius=activate_cam.minRadius,
-                    maxRadius=activate_cam.maxRadius,
-                )
-            
+                gray_for_hough,
+                cv2.HOUGH_GRADIENT,
+                dp=1,
+                minDist=activate_cam.minDist,
+                param1=activate_cam.param1,
+                param2=activate_cam.param2,
+                minRadius=activate_cam.minRadius,
+                maxRadius=activate_cam.maxRadius,
+            )
+
     return circles
+
 
 # --------------------------------------------
 # 円検出結果の評価
@@ -681,7 +698,9 @@ def evaluate_circle_detection(
         if np.isnan(dist_mm) or dist_mm > 3000:
             continue
 
-        angle_deg = abs(compute_angles_from_position(Xr, Yr))  # 正面方向に近いほど小さい
+        angle_deg = abs(
+            compute_angles_from_position(Xr, Yr)
+        )  # 正面方向に近いほど小さい
 
         # --- スコア評価 ---
         score = dist_mm + 5.0 * angle_deg  # 重み5.0は調整可
@@ -695,6 +714,7 @@ def evaluate_circle_detection(
         return True, x, y, r, cam3d, rob3d
     else:
         return False, None, None, None, None, None
+
 
 # --------------------------------------------
 # 角度・距離のEMA平滑化
@@ -727,7 +747,7 @@ def smooth_angle_distance(rob3d, ema_alpha, prev_angle, prev_dist):
 # --------------------------------------------
 # 角度・距離のEMA平滑化
 # --------------------------------------------
-def excute_state_LOST_100(miss_count, thres_1=30, thres_2=75, thres_3=75*2):
+def excute_state_LOST_100(miss_count, thres_1=30, thres_2=75, thres_3=75 * 2):
     # まじで見失った場合
     lost_flag = False
     if miss_count <= thres_1:
@@ -735,13 +755,13 @@ def excute_state_LOST_100(miss_count, thres_1=30, thres_2=75, thres_3=75*2):
         send_dis = 0
         send_angle = 0
     elif miss_count >= thres_2:
-        mode = 1
+        mode = 4
         send_dis = 0
-        send_angle = -5
+        send_angle = -10
     elif miss_count <= thres_3:
-        mode = 1
+        mode = 4
         send_dis = 0
-        send_angle = 5
+        send_angle = 20
     else:
         mode = 0
         send_dis = 0
@@ -749,7 +769,8 @@ def excute_state_LOST_100(miss_count, thres_1=30, thres_2=75, thres_3=75*2):
         lost_flag = True
     return mode, send_dis, send_angle, lost_flag
 
-#--------------------------------------------
+
+# --------------------------------------------
 # ラベリング処理→三角形検出
 # --------------------------------------------
 def detect_triangles(mask_morph, area_min_label=200, area_min=200, epsilon_ratio=0.08):
@@ -771,7 +792,7 @@ def detect_triangles(mask_morph, area_min_label=200, area_min=200, epsilon_ratio
             continue
 
         blob_mask = np.uint8(labels == i) * 255
-        roi = blob_mask[y:y+h, x:x+w]
+        roi = blob_mask[y : y + h, x : x + w]
         contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         for cnt in contours:
@@ -786,21 +807,22 @@ def detect_triangles(mask_morph, area_min_label=200, area_min=200, epsilon_ratio
 
     return approx_contours
 
-#--------------------------------------------
+
+# --------------------------------------------
 # 三角形を評価
 # --------------------------------------------
 def evaluate_triangles_detection(triangles, depth_image, activate_cam):
     if not triangles:
         return False, None, None, None
-    
+
     # 初期化
     cam3d_res = None
     rob3d_res = None
     recog_res = False
     valid_triangles = []
-    valid_cam3d = [] 
-    valid_rob3d = []   # ← rob座標を丸ごと入れる（[Xr, Yr, Zr]）
-    valid_dist_mm = [] # ← 水平距離mmをすぐ使えるように入れておく
+    valid_cam3d = []
+    valid_rob3d = []  # ← rob座標を丸ごと入れる（[Xr, Yr, Zr]）
+    valid_dist_mm = []  # ← 水平距離mmをすぐ使えるように入れておく
 
     for tri in triangles:
         # 重心
@@ -819,7 +841,7 @@ def evaluate_triangles_detection(triangles, depth_image, activate_cam):
             intr=activate_cam.intr,
             T_cam2rob=activate_cam.T_cam2rob,
             roi=7,
-            )
+        )
         if rob3d is None or np.any(np.isnan(rob3d)):
             continue
 
@@ -839,7 +861,7 @@ def evaluate_triangles_detection(triangles, depth_image, activate_cam):
         # 一番近い水平距離を持つインデックス
         nearest_idx = int(np.argmin(valid_dist_mm))
         nearest_tri = valid_triangles[nearest_idx]
-                    
+
         # 旗のポール分オフセットする
         edge = find_vertical_edge(nearest_tri)
         if edge is not None:
@@ -865,7 +887,8 @@ def evaluate_triangles_detection(triangles, depth_image, activate_cam):
             recog_res = False
     return recog_res, rob3d_res, cam3d_res, (mx, my)
 
-#--------------------------------------------
+
+# --------------------------------------------
 # 旗のポールを探す
 # --------------------------------------------
 def find_vertical_edge(tri):
@@ -894,7 +917,8 @@ def find_vertical_edge(tri):
             best_edge = (p1, p2)
     return best_edge
 
-#--------------------------------------------
+
+# --------------------------------------------
 # ゴールポストを探す
 # --------------------------------------------
 def detect_goal_post(
@@ -935,7 +959,7 @@ def detect_goal_post(
 
         # ROI抽出
         blob_mask = np.uint8(labels == i) * 255
-        roi = blob_mask[y:y+h, x:x+w]
+        roi = blob_mask[y : y + h, x : x + w]
         contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             continue
@@ -957,6 +981,7 @@ def detect_goal_post(
 
         # === 3D投影 ===
         from common_function import project_center_to_robot
+
         cam3d, rob3d = project_center_to_robot(
             u=cx,
             v=cy,
@@ -975,8 +1000,7 @@ def detect_goal_post(
     return found, cam3d, rob3d, post_bbox, center_px
 
 
-
-#--------------------------------------------
+# --------------------------------------------
 # 経路の安全を確認
 # --------------------------------------------
 def check_path_safety(mask_morph, depth_image, activate_cam, alpha=0.8):
@@ -984,7 +1008,7 @@ def check_path_safety(mask_morph, depth_image, activate_cam, alpha=0.8):
     retval, labels, stats, _ = cv2.connectedComponentsWithStats(mask_morph)
 
     # まずは最大ラベルからマスクを作る
-    mask_largest = np.zeros_like(mask_morph)   
+    mask_largest = np.zeros_like(mask_morph)
     if retval > 1:
         areas = stats[1:, cv2.CC_STAT_AREA]
         if areas.size > 0:
@@ -1001,19 +1025,19 @@ def check_path_safety(mask_morph, depth_image, activate_cam, alpha=0.8):
             if cx_safe != -1:
                 # 3D投影 → ロボ座標
                 cam3d, rob3d = project_center_to_robot(
-                        u=cx_safe,
-                        v=cy_safe,
-                        depth_image=depth_image,
-                        depth_scale=activate_cam.depth_scale,
-                        intr=activate_cam.intr,
-                        T_cam2rob=activate_cam.T_cam2rob,
-                        roi=7,
-                    )
+                    u=cx_safe,
+                    v=cy_safe,
+                    depth_image=depth_image,
+                    depth_scale=activate_cam.depth_scale,
+                    intr=activate_cam.intr,
+                    T_cam2rob=activate_cam.T_cam2rob,
+                    roi=7,
+                )
                 return True, cam3d, rob3d
     return False, None, None
 
 
-#--------------------------------------------
+# --------------------------------------------
 # 安全中心を計算する
 # --------------------------------------------
 def get_safe_center(dist: np.ndarray, alpha: float):
@@ -1045,7 +1069,7 @@ def get_safe_center(dist: np.ndarray, alpha: float):
 
     cx = int(xs.mean())
     cy = int(ys.mean())
-    return cx, cy, dist[cy, cx]# 半径 [px]
+    return cx, cy, dist[cy, cx]  # 半径 [px]
 
 
 # -------------------------------------------------
@@ -1060,11 +1084,11 @@ def line_sample_points(p0, p1, step=3):
     x1, y1 = p1
     dx = x1 - x0
     dy = y1 - y0
-    
+
     # 線分の長さ（ピクセル単位）
     length = int(np.hypot(dx, dy))
     if length == 0:
-        yield x0, y0 # 始点と終点が同じ場合はその点のみ返す
+        yield x0, y0  # 始点と終点が同じ場合はその点のみ返す
         return
 
     vx = dx / length  # x方向の単位ベクトル
@@ -1076,11 +1100,11 @@ def line_sample_points(p0, p1, step=3):
         y = int(round(y0 + vy * t))
         yield x, y
 
+
 # -------------------------------------------------
 # distanceTransformを使って、直線上に「境界が近い場所」があるか見る
 # -------------------------------------------------
-def is_path_clear_by_dist(dist_img, p_robot, p_goal,
-                          step=3, min_safe_dist=5.0):
+def is_path_clear_by_dist(dist_img, p_robot, p_goal, step=3, min_safe_dist=5.0):
     """
     distanceTransform結果(dist_img)を参照し、
     ロボット(p_robot)からゴール(p_goal)までの直線経路上に
@@ -1091,11 +1115,12 @@ def is_path_clear_by_dist(dist_img, p_robot, p_goal,
     # 経路上の点を step ピクセル間隔でサンプリングして調べる
     for x, y in line_sample_points(p_robot, p_goal, step=step):
         if not (0 <= x < w and 0 <= y < h):
-            continue    # 画像範囲外はスキップ
+            continue  # 画像範囲外はスキップ
         d = dist_img[y, x]  # 障害物までの距離
         if d < min_safe_dist:
-            return False    # 安全距離未満の箇所があれば危険
+            return False  # 安全距離未満の箇所があれば危険
     return True  # すべて安全距離以上 → 経路クリア
+
 
 # -------------------------------------------------
 # ライン上の「最小クリアランス（境界までの最短距離）」を返す
@@ -1146,10 +1171,9 @@ def line_clearance(dist_img, p_robot, p_goal, step=3):
 # BLOCKED のときに、ロボット中心から放射状に探索して
 # 一番遠くまで行ける方向を見つける
 # -------------------------------------------------
-def find_best_direction(dist_img, origin,
-                        angle_step_deg=10,
-                        ray_step_px=3,
-                        min_safe_dist=5.0):
+def find_best_direction(
+    dist_img, origin, angle_step_deg=10, ray_step_px=3, min_safe_dist=5.0
+):
     h, w = dist_img.shape[:2]
     ox, oy = origin
 
@@ -1183,13 +1207,14 @@ def find_best_direction(dist_img, origin,
 
     return best_pt, best_len
 
+
 # -------------------------------------------------
 # goalと同じYのライン上を、横方向にサンプルして
 # 一番安全に行ける点を探す（min_safe_dist対応版）
 # -------------------------------------------------
-def find_best_horizontal(dist_img, origin, goal_y,
-                         x_step=5, step_along_line=3,
-                         min_safe_dist=10.0):
+def find_best_horizontal(
+    dist_img, origin, goal_y, x_step=5, step_along_line=3, min_safe_dist=10.0
+):
     """
     origin         : (x,y) ロボット位置
     goal_y         : ゴールと同じ y（この高さで横に走査する）
@@ -1218,15 +1243,16 @@ def find_best_horizontal(dist_img, origin, goal_y,
 
     return best_pt, best_score
 
+
 # -------------------------------------------------
 # goalpath確認統合関数
 # -------------------------------------------------
-def check_goal_path(mask_morph, robot_xy=(0,0), goal_xy=(0,0), alpha=0.8):
-        ## ラベリング処理 ##
+def check_goal_path(mask_morph, robot_xy=(0, 0), goal_xy=(0, 0), alpha=0.8):
+    ## ラベリング処理 ##
     retval, labels, stats, _ = cv2.connectedComponentsWithStats(mask_morph)
 
     # まずは最大ラベルからマスクを作る
-    mask_largest = np.zeros_like(mask_morph)   
+    mask_largest = np.zeros_like(mask_morph)
     if retval > 1:
         areas = stats[1:, cv2.CC_STAT_AREA]
         if areas.size > 0:
@@ -1243,12 +1269,7 @@ def check_goal_path(mask_morph, robot_xy=(0,0), goal_xy=(0,0), alpha=0.8):
             if cx != -1 and cy != -1:
                 # --- 経路チェック ---
                 path_clear = is_path_clear_by_dist(
-                    dist, robot_xy, goal_xy,
-                    step=3,
-                    min_safe_dist=10.0
+                    dist, robot_xy, goal_xy, step=3, min_safe_dist=10.0
                 )
             return path_clear, dist
     return False, None
-
-
-
