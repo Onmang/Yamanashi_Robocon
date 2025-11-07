@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 実装 L字コース
+# 実装 バンカー字コース
 
 import time
 
@@ -45,7 +45,7 @@ GPIO.setmode(GPIO.BCM)  # GPIOのモードを"GPIO.BCM"に設定
 GPIO.setup(STOP_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # debug
-NEKO = True  # True: ネコ表示ON, False: ネコ表示OFF
+NEKO = False  # True: ネコ表示ON, False: ネコ表示OFF
 if NEKO:
     # --- 上のほう（main() の前とか）に置く ---
     def init_neko_window():
@@ -116,8 +116,10 @@ angle_if_lost = 45  # deg
 dist_if_lost = 200
 
 # 打つときの閾値
-hit_angle_1 = 10  # deg
+hit_angle_1 = -10  # deg
+hit_angle_2 = 60  # deg
 hit_dis_1 = 1500  # mm
+hit_dis_2 = 1200  # mm, 2回目以降
 hit_delay_time = 10.0  # sec 打つ動作の待機時間
 
 # arduino シリアル通信設定
@@ -540,6 +542,10 @@ def main():
                                     mode = 4
                                     send_dist_mm = 0
                                     send_angle_deg = hit_angle_1
+                                elif Hit_n == 2:
+                                    mode = 4
+                                    send_dist_mm = 0
+                                    send_angle_deg = hit_angle_2
                                 else:
                                     mode = 0
                                     send_dist_mm = 0
@@ -572,7 +578,10 @@ def main():
                         print(f"[Debug] case {rasp_mode} in step 2: Ready to hit ball : order {Hit_n} !!!")
                         # 送信
                         mode = 2
-                        send_dist_mm = hit_dis_1
+                        if Hit_n == 1:
+                            send_dist_mm = hit_dis_1
+                        else:
+                            send_dist_mm = hit_dis_2   
                         send_angle_deg = 0
                         delay_after_hit = True
 
