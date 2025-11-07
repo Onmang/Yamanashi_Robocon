@@ -895,6 +895,88 @@ def find_vertical_edge(tri):
     return best_edge
 
 #--------------------------------------------
+# ゴールポストを探す
+# --------------------------------------------
+def detect_goal_post(
+    mask_morph,
+    depth_image,
+    activate_cam,
+    area_min_label=300,
+    area_min_post=500,
+    aspect_min=3.0,
+    approx_eps_ratio=0.03,
+):
+    """
+    白ポストを検出してロボ座標を返す。
+    Returns:
+        found (bool)
+        cam3d (np.ndarray or None)
+        rob3d (np.ndarray or None)
+        post_bbox (tuple or None): (x, y, w, h)
+        center_px (tuple or None): (cx, cy)
+    """
+    found = False
+    cam3d = rob3d = None
+    post_bbox = None
+    center_px = None
+
+    # ラベリング
+    retval, labels, stats, _ = cv2.connectedComponentsWithStats(mask_morph)
+
+    best_area = 0
+    for i in range(1, retval):
+        x, y, w, h, area = stats[i]
+        if area < area_min_label:
+            continue
+
+        aspect = h / w if w > 0 else 0
+        if aspect < aspect_min or area < area_min_post:
+            continue
+
+        # ROI抽出
+        blob_mask = np.uint8(labels == i) * 255
+        roi = blob_mask[y:y+h, x:x+w]
+        contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+
+        cnt = max(contours, key=cv2.contourArea)
+        arclen = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, approx_eps_ratio * arclen, True)
+
+        # ROI→全体座標に戻す
+        approx[:, 0, 0] += x
+        approx[:, 0, 1] += y
+
+        # 重心を計算
+        M = cv2.moments(cnt)
+        if M["m00"] == 0:
+            continue
+        cx = int(M["m10"] / M["m00"]) + x
+        cy = int(M["m01"] / M["m00"]) + y
+
+        # === 3D投影 ===
+        from common_function import project_center_to_robot
+        cam3d, rob3d = project_center_to_robot(
+            u=cx,
+            v=cy,
+            depth_image=depth_image,
+            depth_scale=activate_cam.depth_scale,
+            intr=activate_cam.intr,
+            T_cam2rob=activate_cam.T_cam2rob,
+            roi=7,
+        )
+
+        found = True
+        post_bbox = (x, y, w, h)
+        center_px = (cx, cy)
+        break  # 最大面積の縦長1本でOK
+
+    return found, cam3d, rob3d, post_bbox, center_px
+
+
+
+#--------------------------------------------
 # 経路の安全を確認
 # --------------------------------------------
 def check_path_safety(mask_morph, depth_image, activate_cam, alpha=0.8):
