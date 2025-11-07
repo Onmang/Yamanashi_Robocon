@@ -155,11 +155,7 @@ void loop() {
 
     case 2: {
       int val = (2570 - dis_val_mm) / 20;
-<<<<<<< HEAD
       angleA = constrain(val, 0, 130);
-=======
-      angleA = constrain(val, 130, 0);
->>>>>>> d1a283bb131fd4f1ca03da8d60f68918026f548d
   
       // ひとまずそのままやるならこう
       delay(1000);
