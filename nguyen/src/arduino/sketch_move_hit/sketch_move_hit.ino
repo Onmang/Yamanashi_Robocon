@@ -154,7 +154,6 @@ void readLatestCommand()
 }
 
 
-
 void loop() {
 
   // ---------------------------------
@@ -192,6 +191,7 @@ void loop() {
     }
 
     case 2: {
+      digitalWrite(EN_PIN, HIGH);  // 無効化（モータOFF）
       int val = (2570 - dis_val_mm) / 20;
       angleA = constrain(val, 0, 130);
   
@@ -211,6 +211,8 @@ void loop() {
       flushSerial();    // mode2中に溜まったゴミコマンドを捨てる
       resetStepper();   // ステッピング内部状態リセット
       mode_val = 0;     // 次のコマンドが来るまで待機
+      digitalWrite(EN_PIN, LOW);   // 再度有効化
+      delay(1000);
       break;
     }
 
