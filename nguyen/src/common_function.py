@@ -23,6 +23,7 @@ PARAM_PATH_HSV = [
     "hsv_params_banker.json", #7
     "hsv_params_white.json",  #8 コース２のグリーンとゴール付近
     "hsv_params_blue_d405.json", #9
+    "hsv_params_post.json", #10
 ]  # 保存先パス選択
 PARAM_HOUGH_D435I = "houghcircles_params.json"
 PARAM_HOUGH_D405 = "houghcircles_d405_params.json"
@@ -31,7 +32,7 @@ PARAM_FILTER = "gaussian_filter_params.json"  # ノイズフィルタGUIの保�
 
 class CameraParam:
     """カメラパラメータ格納クラス"""
-    def __init__(self):
+    def __init__(self, T_mtrix):
         self.intr = None  # pyrealsense2.intrinsics オブジェクト
         self.fx = 0
         self.fy = 0
@@ -47,6 +48,7 @@ class CameraParam:
         self.param2=0
         self.minRadius=0
         self.maxRadius=0
+        self.T_cam2rob = T_mtrix
 
     def add_ins_param(self, intr):
         self.intr = intr
@@ -60,9 +62,10 @@ class CameraParam:
         # 同時変換行列, あらかじめロボット座標と決めておく,
         # 現在はカメラを水平にしている
         deg = np.deg2rad  # ← 関数オブジェクトを代入
-        self.T_cam2rob = create_homogeneous_matrix(
-            tx=-(32.5 * 0.001), ty=0, tz=110 * 0.001, rx=deg(-90), ry=deg(0), rz=deg(0)
-        )
+        # self.T_cam2rob = create_homogeneous_matrix(
+        #     # tx=-(32.5 * 0.001), ty=0, tz=110 * 0.001, rx=deg(-90), ry=deg(0), rz=deg(0)  # d435i
+        #      tx=0.0, ty=0.0, tz=0.0, rx=deg(-90), ry=deg(0), rz=deg(0)  # d405
+        # )
 
 
 class CameraParam_ver2:
@@ -333,6 +336,26 @@ def encode_distance(sign_flag=1, distance_mm=0):
     """
     dis_send = f"{sign_flag}{distance_mm % 10000:04d}"
     return dis_send
+
+def encode_distance_ver2(distance_mm=0):
+    """
+    距離を5桁文字列に変換する。
+    +1000 → '01000', -500 → '00500', 0 → '00000'
+    先頭1桁が符号(1:正, 0:負)、残り4桁が絶対値(mm)
+    """
+    # 小数が来てもよいようにいったんintにする
+    d = int(distance_mm)
+
+    if d < 0:
+        sign_flag = 0
+        d = -d  # 絶対値にする
+    else:
+        sign_flag = 1
+
+    # 4桁に収まるように（0〜9999）
+    d = d % 10000
+
+    return f"{sign_flag}{d:04d}"
 
 
 # json から HSV 閾値を読み込む
@@ -766,7 +789,7 @@ def detect_triangles(mask_morph, area_min_label=200, area_min=200, epsilon_ratio
 #--------------------------------------------
 # 三角形を評価
 # --------------------------------------------
-def evaluate_triangles_detection(triangles, depth_image, activate_cam, f_offset=None):
+def evaluate_triangles_detection(triangles, depth_image, activate_cam):
     if not triangles:
         return False, None, None, None
     
@@ -805,7 +828,7 @@ def evaluate_triangles_detection(triangles, depth_image, activate_cam, f_offset=
         dist_rob_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
 
         # 範囲フィルタリング
-        if 100 < dist_rob_mm < 2500:
+        if 100 < dist_rob_mm < 4000:
             valid_triangles.append(tri)
             valid_rob3d.append(rob3d)
             valid_cam3d.append(cam3d)
@@ -822,11 +845,6 @@ def evaluate_triangles_detection(triangles, depth_image, activate_cam, f_offset=
         if edge is not None:
             p1, p2 = edge
             mx = int((p1[0] + p2[0]) / 2)
-
-            # ゴール見つからないときに，オフセットを設定
-            if f_offset is not None:
-                mx += f_offset
-                
             my = int((p1[1] + p2[1]) / 2)
             # この1点だけを3Dにする
             cam3d_b, rob3d_b = project_center_to_robot(
@@ -875,6 +893,88 @@ def find_vertical_edge(tri):
             best_score = score
             best_edge = (p1, p2)
     return best_edge
+
+#--------------------------------------------
+# ゴールポストを探す
+# --------------------------------------------
+def detect_goal_post(
+    mask_morph,
+    depth_image,
+    activate_cam,
+    area_min_label=300,
+    area_min_post=500,
+    aspect_min=3.0,
+    approx_eps_ratio=0.03,
+):
+    """
+    白ポストを検出してロボ座標を返す。
+    Returns:
+        found (bool)
+        cam3d (np.ndarray or None)
+        rob3d (np.ndarray or None)
+        post_bbox (tuple or None): (x, y, w, h)
+        center_px (tuple or None): (cx, cy)
+    """
+    found = False
+    cam3d = rob3d = None
+    post_bbox = None
+    center_px = None
+
+    # ラベリング
+    retval, labels, stats, _ = cv2.connectedComponentsWithStats(mask_morph)
+
+    best_area = 0
+    for i in range(1, retval):
+        x, y, w, h, area = stats[i]
+        if area < area_min_label:
+            continue
+
+        aspect = h / w if w > 0 else 0
+        if aspect < aspect_min or area < area_min_post:
+            continue
+
+        # ROI抽出
+        blob_mask = np.uint8(labels == i) * 255
+        roi = blob_mask[y:y+h, x:x+w]
+        contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+
+        cnt = max(contours, key=cv2.contourArea)
+        arclen = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, approx_eps_ratio * arclen, True)
+
+        # ROI→全体座標に戻す
+        approx[:, 0, 0] += x
+        approx[:, 0, 1] += y
+
+        # 重心を計算
+        M = cv2.moments(cnt)
+        if M["m00"] == 0:
+            continue
+        cx = int(M["m10"] / M["m00"]) + x
+        cy = int(M["m01"] / M["m00"]) + y
+
+        # === 3D投影 ===
+        from common_function import project_center_to_robot
+        cam3d, rob3d = project_center_to_robot(
+            u=cx,
+            v=cy,
+            depth_image=depth_image,
+            depth_scale=activate_cam.depth_scale,
+            intr=activate_cam.intr,
+            T_cam2rob=activate_cam.T_cam2rob,
+            roi=7,
+        )
+
+        found = True
+        post_bbox = (x, y, w, h)
+        center_px = (cx, cy)
+        break  # 最大面積の縦長1本でOK
+
+    return found, cam3d, rob3d, post_bbox, center_px
+
+
 
 #--------------------------------------------
 # 経路の安全を確認
