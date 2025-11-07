@@ -11,7 +11,7 @@ Sw_pin = 23                         #変数"Sw_pin"に23を格納
 #GPIOの設定
 GPIO.setmode(GPIO.BCM)              #GPIOのモードを"GPIO.BCM"に設定
 #GPIO23を入力モードに設定してプルダウン抵抗を有効にする
-GPIO.setup(Sw_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Sw_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 #while文で無限ループ
 #GPIO23の入力を読み取る
