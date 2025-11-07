@@ -172,8 +172,8 @@ void computeCommandRates(float &x_cmd, float &y_cmd)
 void moveAbsolute(float targetAngle_deg, float targetDist_mm)
 {
     // --- 可調整パラメータ ---
-    const float DEG_TO_REV = 0.023f;   // 回転1度あたりのホイール回転量 [rev/deg]（調整用）
-    const float MM_TO_REV  = 1.0f / (PI * 42.0f); // 距離[mm] → 回転[rev] （車輪径42mm）
+    const float DEG_TO_REV = 0.0185f;   // 回転1度あたりのホイール回転量 [rev/deg]（調整用）
+    const float MM_TO_REV  = 1.0f / (PI * 40.0f); // 距離[mm] → 回転[rev] （車輪径42mm）
 
     const float ROT_SPEED_RPS = 0.5f;   // 回転速度 [rev/s]
     const float LIN_SPEED_RPS = 0.8f;   // 前進速度 [rev/s]
