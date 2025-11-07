@@ -19,9 +19,9 @@ int angleC = 105;
 
 //超音波
 int sensorPin = A1;
-int ledPin1 = 13;
-int ledPin2 = 12;
-int ledPin3 = 11;
+//int ledPin1 = 13;
+//int ledPin2 = 12;
+//int ledPin3 = 11;
 int i = 0;
 int ave = 0;
 unsigned long now = 0;
@@ -78,60 +78,98 @@ void setup() {
   y_dir_sign = +1;
   t_next = micros();
 
-  pinMode(ledPin1, OUTPUT);
-  pinMode(ledPin2, OUTPUT);
-  pinMode(ledPin3, OUTPUT);
+//  pinMode(ledPin1, OUTPUT);
+//  pinMode(ledPin2, OUTPUT);
+//  pinMode(ledPin3, OUTPUT);
 }
-void loop() {
 
-  // ---------------------------------
-  // 1. シリアル受信
-  // ---------------------------------
-  if (Serial.available()) {
-    String receivedData = Serial.readStringUntil('\n');
-    receivedData.trim();
-#ifdef DEBUG
-    Serial.print("Received Data: ");
-    Serial.println(receivedData);
-#endif
+// ==== 共通ユーティリティ ====
 
-    if (receivedData.length() == EXPECTED_LEN) {
-      // 全桁チェック
+// シリアルバッファを空にする（古い命令を捨てる）
+void flushSerial()
+{
+  while (Serial.available()) {
+    Serial.read();
+  }
+}
+
+// ステッピングの状態リセット＆停止
+void resetStepper()
+{
+  x_step_accum = 0.0f;
+  y_step_accum = 0.0f;
+  driveVelocity(0.0f, 0.0f, (float)UPDATE_PERIOD_US * 1e-6f);
+  t_next = micros() + UPDATE_PERIOD_US;  // 次周期を「今基準」に
+}
+
+// 常に「最後の1本だけ」読む版
+void readLatestCommand()
+{
+  if (!Serial.available()) return;
+
+  String last = "";
+
+  // バッファに溜まっている行を全部読む
+  while (Serial.available()) {
+    String line = Serial.readStringUntil('\n');
+    line.trim();
+    if (line.length() == EXPECTED_LEN) {
       bool all_digit = true;
-      for (unsigned int i = 0; i < receivedData.length(); ++i) {
-        if (!isDigit(receivedData.charAt(i))) {
+      for (uint8_t i = 0; i < line.length(); i++) {
+        if (!isDigit(line[i])) {
           all_digit = false;
           break;
         }
       }
       if (all_digit) {
-        // パース
-        int mode = receivedData.substring(0, 1).toInt();
-
-        int sign_flag_deg = receivedData.substring(1, 2).toInt();
-        int angle_abs     = receivedData.substring(2, 5).toInt();
-        int angle_signed  = (sign_flag_deg == 1) ? angle_abs : -angle_abs;
-
-        int sign_flag_dis = receivedData.substring(5, 6).toInt();
-        int dis_abs       = receivedData.substring(6, 10).toInt();
-        int dis_signed    = (sign_flag_dis == 1) ? dis_abs : -dis_abs;
-
-        mode_val   = mode;
-        angle_deg  = angle_signed;
-        dis_val_mm = dis_signed;
-
-#ifdef DEBUG
-        Serial.print(F("mode_val: "));
-        Serial.println(mode_val);
-        Serial.print(F("angle_deg: "));
-        Serial.println(angle_deg);
-        Serial.print(F("dis_val: "));
-        Serial.println(dis_val_mm);
-#endif
+        last = line;  // 有効なものだけ上書き → 最後の1本だけ残る
       }
     }
   }
 
+  if (last == "") return;
+
+  int mode = last.substring(0, 1).toInt();
+
+  int sign_flag_deg = last.substring(1, 2).toInt();
+  int angle_abs     = last.substring(2, 5).toInt();
+  int angle_signed  = (sign_flag_deg == 1) ? angle_abs : -angle_abs;
+
+  int sign_flag_dis = last.substring(5, 6).toInt();
+  int dis_abs       = last.substring(6, 10).toInt();
+  int dis_signed    = (sign_flag_dis == 1) ? dis_abs : -dis_abs;
+
+  mode_val   = mode;
+  angle_deg  = angle_signed;
+  dis_val_mm = dis_signed;
+
+#ifdef DEBUG
+  Serial.print(F("mode_val: "));
+  Serial.println(mode_val);
+  Serial.print(F("angle_deg: "));
+  Serial.println(angle_deg);
+  Serial.print(F("dis_val: "));
+  Serial.println(dis_val_mm);
+#endif
+}
+
+
+
+void loop() {
+
+  // ---------------------------------
+  // 1. シリアル受信
+  // ---------------------------------
+  //  if (Serial.available()) {
+  //    String receivedData = Serial.readStringUntil('\n');
+  //    receivedData.trim();
+  //#ifdef DEBUG
+  //    Serial.print("Received Data: ");
+  //    Serial.println(receivedData);
+  //#endif
+  //
+
+  readLatestCommand();
   // ---------------------------------
   // 2. ステッピングは周期制御
   // ---------------------------------
@@ -169,6 +207,10 @@ void loop() {
       delay(1000);
       servoA.write(30);
       delay(1000);
+      // ★ ブロッキング後の暴走防止 ★
+      flushSerial();    // mode2中に溜まったゴミコマンドを捨てる
+      resetStepper();   // ステッピング内部状態リセット
+      mode_val = 0;     // 次のコマンドが来るまで待機
       break;
     }
 
@@ -262,7 +304,10 @@ void loop() {
 
     case 4: {
      moveAbsolute((float)angle_deg, (float)dis_val_mm);
-     mode_val = 0; // 1回だけ動作して停止
+      // 絶対値移動が終わったら状態クリア
+      flushSerial();
+      resetStepper();
+      mode_val = 0;
      break;
     }
  
