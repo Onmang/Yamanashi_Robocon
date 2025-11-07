@@ -193,19 +193,26 @@ void loop() {
     case 2: {
       digitalWrite(EN_PIN, HIGH);  // 無効化（モータOFF）
       int val = (2570 - dis_val_mm) / 20;
-      angleA = constrain(val, 0, 130);
+      angleA = constrain(val, 30, 130);
   
       // ひとまずそのままやるならこう
+      servoA.write(angleA);//セット
       delay(1000);
-      servoA.write(angleA);
+      servoB.write(40);//打つ
+      delay(1000);  
+      servoA.write(30);//振り上げる
       delay(2000);
-      servoB.write(40);
-      delay(4000);  
-      servoA.write(180);
-      delay(4000);
-      servoB.write(150);
+      servoB.write(150);//セット
+      delay(2000);
+      servoA.write(150);//落ち着く
       delay(1000);
-      servoA.write(30);
+      servoB.write(40);//解放
+      delay(1000);
+      servoA.write(180);//じゅんび
+      delay(3000);
+      servoB.write(150);//セット
+      delay(1000);
+      servoA.write(30);//振り上げ
       delay(1000);
       // ★ ブロッキング後の暴走防止 ★
       flushSerial();    // mode2中に溜まったゴミコマンドを捨てる
