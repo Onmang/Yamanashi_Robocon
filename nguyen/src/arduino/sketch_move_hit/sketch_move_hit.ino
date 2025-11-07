@@ -154,8 +154,8 @@ void loop() {
     }
 
     case 2: {
-      int val = (257 - dis_val_mm) / 2;
-      angleA = constrain(val, 130, 0);
+      int val = (2570 - dis_val_mm) / 20;
+      angleA = constrain(val, 0, 130);
   
       // ひとまずそのままやるならこう
       delay(1000);
@@ -168,6 +168,7 @@ void loop() {
       servoB.write(150);
       delay(1000);
       servoA.write(30);
+      delay(1000);
       break;
     }
 
