@@ -695,7 +695,7 @@ def evaluate_circle_detection(
 
         Xr, Yr, Zr = rob3d  # [m]
         dist_mm = np.sqrt(Xr**2 + Yr**2) * 1000.0
-        if np.isnan(dist_mm) or dist_mm > 3000:
+        if np.isnan(dist_mm) or dist_mm > 2000:
             continue
 
         angle_deg = abs(

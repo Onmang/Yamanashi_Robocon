@@ -89,17 +89,15 @@ WINDOW_MASK = "HSV Mask Morph"
 WINDOW_RESULT = "Result"
 
 # しきい値関係
-CIRC_MIN = 0.80
+CIRC_MIN = 0.8
 AREA_MIN = 100  # 小ノイズ除去
 AREA_MIN_FLAG = 120  # flag用三角形最小面積
 AREA_MIN_POST = 150  # post用三角形最小面積
 ALPHA_VAL = 0.8  # 安全pathマージン
 CHANGE_CAMERA_THRE_D435I = 600  # mm
 CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I + 150  # mm
-dist_th_1 = 70  # mm
-dist_th_2 = 130  # mm  打つ直前のd405とballの距離
+dist_th_1 = 90  # mm
 dist_move = 70  # mm ボール打つ準備時の移動距離
-dist_max = 200  # mm ボール打つ準備時にボールをlostしたとき, ※要調整
 angle_th_1 = 1  # deg
 
 # ゴール認識閾値 、2打目以上、通常
@@ -123,7 +121,7 @@ hit_dis_2 = 1200  # mm, 2回目以降
 hit_delay_time = 10.0  # sec 打つ動作の待機時間
 
 # arduino シリアル通信設定
-ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF
+ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF
 if ARDUINO:
     global ser
     serial_port = "/dev/ttyACM0"  # arduino UNO
@@ -501,8 +499,8 @@ def main():
                             if dist_mm < dist_th_1:
                                 mode = 0
                                 send_dist_mm = 0
-                                send_angle_deg = 0
-                                rasp_mode = 200  # モード変更
+                                send_angle_deg = 0    
+                                rasp_mode = 200
                             else:
                                 mode = 1
                                 send_dist_mm = dist_mm

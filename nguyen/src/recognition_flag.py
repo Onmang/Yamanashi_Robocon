@@ -32,7 +32,7 @@ from common_function import (
 DEBUG = True  # True: デバッグモードON, False: デバッグモードOFF
 CIRC_MIN = 0.80
 AREA_MIN = 100  # 小ノイズ除去
-AREA_MIN_FLAG = 100 # flag用三角形最小面積
+AREA_MIN_FLAG = 120 # flag用三角形最小面積
 
 # arduino シリアル通信設定
 ARDUINO = False
