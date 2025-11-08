@@ -45,7 +45,7 @@ GPIO.setmode(GPIO.BCM)  # GPIOのモードを"GPIO.BCM"に設定
 GPIO.setup(STOP_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # debug
-NEKO = True  # True: ネコ表示ON, False: ネコ表示OFF
+NEKO = False  # True: ネコ表示ON, False: ネコ表示OFF
 if NEKO:
     # --- 上のほう（main() の前とか）に置く ---
     def init_neko_window():
@@ -83,6 +83,7 @@ if NEKO:
     cv2.waitKey(30)  # ★ 初回だけちょっと待って描画させる
     show_neko("happy")
 
+
 # windname
 WINDOW_INPUT = "Input"
 WINDOW_MASK = "HSV Mask Morph"
@@ -96,14 +97,13 @@ AREA_MIN_POST = 150  # post用三角形最小面積
 ALPHA_VAL = 0.8  # 安全pathマージン
 CHANGE_CAMERA_THRE_D435I = 600  # mm
 CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I + 150  # mm
-dist_th_1 = 70  # mm
-dist_th_2 = 130  # mm  打つ直前のd405とballの距離
+dist_th_1 = 70 #70  # mm
 dist_move = 70  # mm ボール打つ準備時の移動距離
-dist_max = 200  # mm ボール打つ準備時にボールをlostしたとき, ※要調整
 angle_th_1 = 1  # deg
 
 # ゴール認識閾値 、2打目以上、通常
 dist_min_cm_goal = 30  # cm
+
 dist_max_cm_goal = 150  # cm
 # ゴール認識閾値 、ゴールが近すぎる場合
 dist_min_cm_goal_2 = 10  # cm
@@ -113,19 +113,20 @@ dist_max_cm_goal_2 = 80  # cm
 angle_if_lost = 45  # deg
 
 # わからないときの移動距離
-dist_if_lost = 200
+dist_if_lost = 100
 
 # 打つときの閾値
-hit_angle_1 = 10  # deg
+hit_angle_1 = 8  # deg
 hit_dis_1 = 1500  # mm
 hit_delay_time = 10.0  # sec 打つ動作の待機時間
 
 # arduino シリアル通信設定
-ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF
+ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF
 if ARDUINO:
     global ser
     serial_port = "/dev/ttyACM0"  # arduino UNO
     # serial_port = "/dev/ttyUSB0"  # arduino UNO
+    
     baud_rate = 115200  # 9600, 115200
     ser = serial.Serial(
         serial_port,
@@ -198,7 +199,7 @@ def main():
             },
             dis_param_path=PARAM_PATH_DIS_D435I,
             hough_param_path=PARAM_HOUGH_D435I,
-            ball_hsv_param_path=PARAM_PATH_HSV[2],
+            ball_hsv_param_path=PARAM_PATH_HSV[1],
         )
 
         # RealSense D405 カメラ初期化
@@ -218,14 +219,14 @@ def main():
                 "rz_deg": 0,
             },
             dis_param_path=PARAM_PATH_DIS_D405,
-            hough_param_path=PARAM_HOUGH_D405,
-            ball_hsv_param_path=PARAM_PATH_HSV[9],
+            hough_param_path=PARAM_HOUGH_D405, 
+            ball_hsv_param_path=PARAM_PATH_HSV[1],
         )
 
         # init activate cam
         time.sleep(1.0)  # カメラ安定化待ち
         print("[DEBUG] Camera initialized.")
-        activate_cam = cam_d435i
+        activate_cam = cam_d405
 
         # --------------------------------------------
         # メインループ
@@ -497,14 +498,16 @@ def main():
                                 thre_d405=CHANGE_CAMERA_THRE_D405,
                             )
                             if dist_mm < dist_th_1:
+                                print("[Debug] dist_mm < dist_th_1, set to rasp_mode 200")
                                 mode = 0
                                 send_dist_mm = 0
-                                send_angle_deg = 0
-                                rasp_mode = 200  # モード変更
+                                send_angle_deg = 0    
+                                rasp_mode = 200
                             else:
                                 mode = 1
                                 send_dist_mm = dist_mm
-                                send_angle_deg = angle_deg
+                                send_angle_deg = angle_deg     
+            
                         case "HOLD":
                             mode = 1
                             send_dist_mm = prev_dist
@@ -523,7 +526,6 @@ def main():
                                 ###############
                                 # コース確認必要
                                 ###############
-                                # 前処理の2値化
                                 mask_morph, vis = preprocess_depth_and_hsv(
                                     color_image,
                                     depth_image,
@@ -650,6 +652,12 @@ def main():
                     ser.write(msg.encode("ascii"))
                     # if DEBUG:
                     # print(f"[Debug] Sent{(state)}: {msg.strip()}")
+                    # if delay_rasp_mode2 :
+                    #     print("[Debug] Delay for rasp_mode 200:", 3.0)
+                    #     time.sleep(3.0)  # rasp_mode 200への切り替え待機
+                    #     print("[Debug] Delay finished.")
+                    #     rasp_mode = 200
+                    #     delay_rasp_mode2 = False
                     if delay_after_hit:
                         print("[Debug] Delay for hitting:", hit_delay_time)
                         time.sleep(hit_delay_time)  # 打つ時間待機

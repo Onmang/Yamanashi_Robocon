@@ -483,8 +483,8 @@ def main():
                             # print("Failed to write to serial:", e)
                 else:
                     # LOST: 安全化（ゼロ送信、直前値もリセット）
-                    if activate_cam is not cam_d435i:
-                        activate_cam = cam_d435i
+                    # if activate_cam is not cam_d435i:
+                    #     activate_cam = cam_d435i
                     state = "LOST"
                     prev_angle = 0
                     prev_dist = 0
