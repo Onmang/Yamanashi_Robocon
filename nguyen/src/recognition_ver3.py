@@ -79,8 +79,8 @@ if NEKO:
         "smile":  cv2.imread(f"{NEKO_DIR}/neko_smile.png"),
     }
     _last_neko_name = "happy"   # 直前に表示した名前を覚える
-    init_neko_window()  # ← 最初に1回だけ
-    cv2.waitKey(30)  # ★ 初回だけちょっと待って描画させる
+    init_neko_window()  # 最初に1回だけ
+    cv2.waitKey(30)  # 初回だけちょっと待って描画させる
     show_neko("happy")
 
 
@@ -97,7 +97,7 @@ AREA_MIN_POST = 150  # post用三角形最小面積
 ALPHA_VAL = 0.8  # 安全pathマージン
 CHANGE_CAMERA_THRE_D435I = 600  # mm
 CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I + 150  # mm
-dist_th_1 = 70 #70  # mm
+dist_th_1 = 70  #70  # mm
 dist_move = 70  # mm ボール打つ準備時の移動距離
 angle_th_1 = 1  # deg
 
@@ -110,7 +110,7 @@ dist_min_cm_goal_2 = 10  # cm
 dist_max_cm_goal_2 = 80  # cm
 
 # わからないときの回転角度
-angle_if_lost = 45  # deg
+angle_if_lost = 10  # deg
 
 # わからないときの移動距離
 dist_if_lost = 100
@@ -589,18 +589,14 @@ def main():
                         activate_cam = cam_d435i
                         rasp_mode = 100
                         if NEKO: show_neko("happy")
-                        print("[Debug] delay for move back... mode [2]")
                         time.sleep(1.0)
-                        print("[Debug] move back finished.")
 
                     else:
                         # 送信
                         mode = 4
                         send_dist_mm = -dist_move  # 70mm バック
                         send_angle_deg = 0
-                        print("[Debug] delay for move back... mode [4]")
                         time.sleep(0.5)
-                        print("[Debug] move back finished.")
                         
                         # 打つ準備            
                         hit_ready = True
@@ -650,14 +646,7 @@ def main():
                 msg = f"{mode}{angle_code}{dist_code}\n"
                 try:
                     ser.write(msg.encode("ascii"))
-                    # if DEBUG:
                     # print(f"[Debug] Sent{(state)}: {msg.strip()}")
-                    # if delay_rasp_mode2 :
-                    #     print("[Debug] Delay for rasp_mode 200:", 3.0)
-                    #     time.sleep(3.0)  # rasp_mode 200への切り替え待機
-                    #     print("[Debug] Delay finished.")
-                    #     rasp_mode = 200
-                    #     delay_rasp_mode2 = False
                     if delay_after_hit:
                         print("[Debug] Delay for hitting:", hit_delay_time)
                         time.sleep(hit_delay_time)  # 打つ時間待機

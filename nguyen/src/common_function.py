@@ -979,9 +979,6 @@ def detect_goal_post(
         cx = int(M["m10"] / M["m00"]) + x
         cy = int(M["m01"] / M["m00"]) + y
 
-        # === 3D投影 ===
-        from common_function import project_center_to_robot
-
         cam3d, rob3d = project_center_to_robot(
             u=cx,
             v=cy,
