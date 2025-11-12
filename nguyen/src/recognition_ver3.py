@@ -248,6 +248,7 @@ def main():
             if GPIO.input(STOP_PIN) == GPIO.HIGH:  # GPIO23が"1"のとき
                 # print("[Debug] Emergency Stop Activated!")
                 Hit_n = 1
+                rasp_mode = 100
                 if activate_cam is not cam_d405:
                     activate_cam = cam_d405
                 if NEKO: show_neko("confuse")
