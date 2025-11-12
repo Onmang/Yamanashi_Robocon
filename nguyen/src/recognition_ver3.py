@@ -57,6 +57,7 @@ if NEKO:
         """
         画像を差し替えるだけ。waitKeyは呼ばない。
         """
+        
         global _last_neko_name
 
         if name is None:
@@ -102,17 +103,17 @@ dist_move = 70  # mm ボール打つ準備時の移動距離
 angle_th_1 = 1  # deg
 
 # plan B: d405で認識できない場合に使うモード
-PLAN_B = False
+PLAN_B = True
 if PLAN_B:
-    dist_th_1 = 200  # mm
-    dist_plan_b = 130  # mm
+    dist_th_1 = 220  # mm
+    dist_plan_b = 150  # mm
     
 # ボール色指定
 if False: # 青いボール
     ball_d435i = 2
     ball_d405  = 9
 else: # 黄色ボール
-    ball_d435i = 1
+    ball_d435i = 11
     ball_d405  = 1
     
 
@@ -120,9 +121,6 @@ else: # 黄色ボール
 dist_min_cm_goal = 30  # cm
 
 dist_max_cm_goal = 150  # cm
-# ゴール認識閾値 、ゴールが近すぎる場合
-dist_min_cm_goal_2 = 10  # cm
-dist_max_cm_goal_2 = 80  # cm
 
 # わからないときの回転角度
 angle_if_lost = 10  # deg
@@ -131,8 +129,8 @@ angle_if_lost = 10  # deg
 dist_if_lost = 100
 
 # 打つときの閾値
-hit_angle_1 = 8  # deg
-hit_dis_1 = 1500  # mm
+hit_angle_1 = 12  # deg
+hit_dis_1 = 2000  # mm
 hit_delay_time = 10.0  # sec 打つ動作の待機時間
 
 # arduino シリアル通信設定
@@ -195,7 +193,7 @@ def main():
         # カメラ初期化
         # --------------------------------------------
         # 解像度とFPS
-        W, H, FPS = 640, 480, 15
+        W, H, FPS = 640, 480, 30
 
         # RealSense D435i カメラ初期化
         cam_d435i = init_realsense_camera(
@@ -256,6 +254,7 @@ def main():
         hit_ready = False
         Hit_n = 1
         delay_after_hit = False
+        rasp_100_counter = 0
 
         # main loop
         while True:
@@ -264,9 +263,15 @@ def main():
                 # print("[Debug] Emergency Stop Activated!")
                 Hit_n = 1
                 rasp_mode = 100
+                state = "LOST"
+                mode = 0
+                send_dist_mm = 0
+                send_angle_deg = 0
+                rasp_100_counter = 0
+                hit_ready = False
+                recog_res = False  # 検出結果初期化
                 if activate_cam is not cam_d405:
                     activate_cam = cam_d405
-                if NEKO: show_neko("confuse")
                 continue
 
             # ここにメインループの処理を記述
@@ -314,57 +319,6 @@ def main():
                     recog_res, c_x, c_y, c_r, cam3d, rob3d = evaluate_circle_detection(
                         circles, depth_image, activate_cam
                     )
-
-                    # # 3打目以降はpath確認
-                    # if recog_res and rob3d[2] < 1000 and Hit_n >= 3:
-                    #     # 前処理の2値化
-                    #     mask_morph_add, vis = preprocess_depth_and_hsv(
-                    #         color_image,
-                    #         depth_image,
-                    #         activate_cam,
-                    #         dist_min_cm=None,
-                    #         dist_max_cm=None,
-                    #         gaus_k=gaus_k,
-                    #         sigmaX=sigmaX,
-                    #         hsv_lo=white_lo,
-                    #         hsv_hi=white_hi,
-                    #     )
-
-                    #     recog_res, cam3d, rob3d = check_path_safety(
-                    #         mask_morph_add, depth_image, activate_cam, alpha=ALPHA_VAL
-                    #     )
-
-                    #     # --- ロボット位置（仮） ---
-                    #     h, w = vis.shape[:2]
-                    #     robot_xy = (w // 2, h - 10)
-
-                    #     # ゴールpath確認
-                    #     path_clear, dist = check_goal_path(
-                    #         mask_morph_add,
-                    #         robot_xy=robot_xy,
-                    #         goal_xy=(c_x, c_y),
-                    #         alpha=ALPHA_VAL,
-                    #     )
-                    #     # --- 角度で探す代替ルート ---
-                    #     if not path_clear:
-                    #         best_h_pt, _ = find_best_horizontal(
-                    #             dist_img=dist,
-                    #             origin=robot_xy,
-                    #             goal_y=c_y,
-                    #             x_step=5,
-                    #             step_along_line=3,
-                    #             min_safe_dist=10.0,
-                    #         )
-                    #         # --- 3D座標計算 ---
-                    #         cam3d, rob3d = project_center_to_robot(
-                    #             u=best_h_pt[0],
-                    #             v=best_h_pt[1],
-                    #             depth_image=depth_image,
-                    #             depth_scale=activate_cam.depth_scale,
-                    #             intr=activate_cam.intr,
-                    #             T_cam2rob=activate_cam.T_cam2rob,
-                    #             roi=7,
-                    #         )
                 ### ゴール探索モード ###
                 case 200:
                     if activate_cam is not cam_d435i:
@@ -409,32 +363,32 @@ def main():
                         )
                     )
 
-                ## ゴールが近すぎる場合 ###
-                case 210:
-                    if activate_cam is not cam_d435i:
-                        activate_cam = cam_d435i
+                # ## ゴールが近すぎる場合 ###
+                # case 210:
+                #     if activate_cam is not cam_d435i:
+                #         activate_cam = cam_d435i
 
-                    mask_morph, vis = preprocess_depth_and_hsv(
-                        color_image,
-                        depth_image,
-                        activate_cam,
-                        dist_min_cm=dist_min_cm_goal_2,
-                        dist_max_cm=dist_max_cm_goal_2,
-                        gaus_k=gaus_k,
-                        sigmaX=sigmaX,
-                        hsv_lo=post_lo,
-                        hsv_hi=post_hi,
-                    )
+                #     mask_morph, vis = preprocess_depth_and_hsv(
+                #         color_image,
+                #         depth_image,
+                #         activate_cam,
+                #         dist_min_cm=dist_min_cm_goal_2,
+                #         dist_max_cm=dist_max_cm_goal_2,
+                #         gaus_k=gaus_k,
+                #         sigmaX=sigmaX,
+                #         hsv_lo=post_lo,
+                #         hsv_hi=post_hi,
+                #     )
 
-                    recog_res, _, rob3d, _, _ = detect_goal_post(
-                        mask_morph,
-                        depth_image,
-                        activate_cam,
-                        area_min_label=AREA_MIN,
-                        area_min_post=AREA_MIN_POST,
-                        aspect_min=6.0,
-                        approx_eps_ratio=0.03,
-                    )
+                #     recog_res, _, rob3d, _, _ = detect_goal_post(
+                #         mask_morph,
+                #         depth_image,
+                #         activate_cam,
+                #         area_min_label=AREA_MIN,
+                #         area_min_post=AREA_MIN_POST,
+                #         aspect_min=6.0,
+                #         approx_eps_ratio=0.03,
+                #     )
 
                 ### 打つ　###
                 case 300:
@@ -514,18 +468,27 @@ def main():
                                 thre_d405=CHANGE_CAMERA_THRE_D405,
                             )
                             if dist_mm < dist_th_1:
-                                print("[Debug] dist_mm < dist_th_1, set to rasp_mode 200")
-                                mode = 0
-                                send_dist_mm = 0
-                                send_angle_deg = 0    
-                                rasp_mode = 200
-                                if PLAN_B:
-                                    ## plan B ##
-                                    ## d405で認識できない場合の代替ルート
-                                    mode = 4
-                                    send_dist_mm = dist_plan_b
-                                    send_angle_deg = 0
-                                    time.sleep(1.0)
+                                rasp_100_counter += 1
+                                print("[Debug] rasp_100_counter:", rasp_100_counter)
+                                if rasp_100_counter >= 10:
+                                    print("[Debug] dist_mm < dist_th_1, set to rasp_mode 200")
+                                    mode = 0
+                                    send_dist_mm = 0
+                                    send_angle_deg = 0    
+                                    if PLAN_B:
+                                        # plan B ##
+                                        # d405で認識できない場合の代替ルート
+                                        mode = 4
+                                        send_dist_mm = dist_plan_b
+                                        send_angle_deg = 0
+                                        time.sleep(1.0)
+                                    rasp_mode = 200
+                                    rasp_100_counter = 0
+                                else:
+                                    mode = 0
+                                    send_dist_mm = 0
+                                    send_angle_deg = 0    
+                                    rasp_mode = 100
                             else:
                                 mode = 1
                                 send_dist_mm = dist_mm
@@ -570,6 +533,7 @@ def main():
                                     send_dist_mm = 0
                                     send_angle_deg = 0
                                 rasp_mode = 300
+                                hit_ready = False
 
                             else:  # まだ
                                 mode = 1
@@ -587,11 +551,11 @@ def main():
                             # send_angle_deg = 0
                             mode = 4  
                             send_dist_mm = 0
-                            send_angle_deg = -20
-                            if (
-                                miss_count > FPS * 10
-                            ):  # 10秒以上見失ったらボール探索へ戻る
-                                rasp_mode = 210
+                            send_angle_deg = -10
+                            # if (
+                            #     miss_count > FPS * 10
+                            # ):  # 10秒以上見失ったらボール探索へ戻る
+                            #     rasp_mode = 210
                 case 300:
                     if hit_ready:
                         print(f"[Debug] case {rasp_mode} in step 2: Ready to hit ball : order {Hit_n} !!!")
@@ -613,7 +577,6 @@ def main():
                         rasp_mode = 100
                         if NEKO: show_neko("happy")
                         time.sleep(1.0)
-
                     else:
                         # 送信
                         mode = 4
@@ -637,27 +600,27 @@ def main():
                             mode = 1  # もうわからない
                             send_dist_mm = 0
                             send_angle_deg = -angle_if_lost
-                case 210:  # ゴールが近い過ぎるときとか
-                    match state:
-                        case "TRACK":
-                            if abs(angle_deg) <= angle_th_1:
-                                mode = 1
-                                send_dist_mm = dist_mm
-                                send_angle_deg = angle_deg
-                                activate_cam = cam_d405
-                                rasp_mode = 300
-                            else:
-                                mode = 1
-                                send_dist_mm = 0
-                                send_angle_deg = angle_deg
-                        case "HOLD":
-                            mode = 1
-                            send_dist_mm = 0
-                            send_angle_deg = prev_angle
-                        case "LOST":
-                            mode = 1  # もうわからない
-                            send_dist_mm = 0
-                            send_angle_deg = -angle_if_lost
+                # case 210:  # ゴールが近い過ぎるときとか
+                #     match state:
+                #         case "TRACK":
+                #             if abs(angle_deg) <= angle_th_1:
+                #                 mode = 1
+                #                 send_dist_mm = dist_mm
+                #                 send_angle_deg = angle_deg
+                #                 activate_cam = cam_d405
+                #                 rasp_mode = 300
+                #             else:
+                #                 mode = 1
+                #                 send_dist_mm = 0
+                #                 send_angle_deg = angle_deg
+                #         case "HOLD":
+                #             mode = 1
+                #             send_dist_mm = 0
+                #             send_angle_deg = prev_angle
+                #         case "LOST":
+                #             mode = 1  # もうわからない
+                #             send_dist_mm = 0
+                #             send_angle_deg = -angle_if_lost
                 case _:
                     print("[Debug] Undefined Mode in step 2")
                     continue

@@ -14,7 +14,7 @@ PARAM_PATH_DIS_GREEN = "distance_green_params.json"
 PARAM_PATH_DIS_D405 = "distance_d405_params.json"
 PARAM_PATH_HSV = [
     "hsv_params_red.json",  # 0
-    "hsv_params_yellow.json",  # 1
+    "hsv_params_yellow.json",  # 1,  d405
     "hsv_params_blue.json",  # 2
     "hsv_params_flag.json",  # 3
     "hsv_params_green.json",  # 4
@@ -24,6 +24,7 @@ PARAM_PATH_HSV = [
     "hsv_params_white.json",  # 8 コース２のグリーンとゴール付近
     "hsv_params_blue_d405.json",  # 9
     "hsv_params_post.json",  # 10
+    "hsv_params_yellow_d435i.json",  # 11
 ]  # 保存先パス選択
 PARAM_HOUGH_D435I = "houghcircles_params.json"
 PARAM_HOUGH_D405 = "houghcircles_d405_params.json"

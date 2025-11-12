@@ -17,6 +17,13 @@ GPIO.setmode(GPIO.BCM)              #GPIOのモードを"GPIO.BCM"に設定
 #GPIO23を入力モードに設定
 GPIO.setup(STOP_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
+# ボール色指定
+if False: # 青いボール
+    ball_d435i = 2
+    ball_d405  = 9
+else: # 黄色ボール
+    ball_d435i = 11
+    ball_d405  = 1
 
 from common_function import (
     compute_angles_from_position,
@@ -46,7 +53,7 @@ AREA_MIN = 100  # 小ノイズ除去
 # AREA_MAX = 10000  # 大きすぎる塊を除外（必要に応じ調整）
 CHANGE_CAMERA_THRE_D435I = 600 # mm
 CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I+150 # mm
-STOP_DIS_D405 = 70 # mm
+STOP_DIS_D405 = 210 # mm
 
 # arduino シリアル通信設定
 ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF 
@@ -146,7 +153,7 @@ def main():
             },
             dis_param_path=PARAM_PATH_DIS_D435I,
             hough_param_path=PARAM_HOUGH_D435I,
-            ball_hsv_param_path=PARAM_PATH_HSV[2],
+            ball_hsv_param_path=PARAM_PATH_HSV[ball_d435i],
         )
         # RealSense D405 カメラ初期化
         # d405はcam3d
@@ -166,12 +173,12 @@ def main():
                 },
                 dis_param_path=PARAM_PATH_DIS_D405,
                 hough_param_path=PARAM_HOUGH_D405,
-                ball_hsv_param_path=PARAM_PATH_HSV[9],
+                ball_hsv_param_path=PARAM_PATH_HSV[ball_d405],
         )
 
         # アクティブカメラ
         time.sleep(1)  # カメラ安定化待ち
-        activate_cam = cam_d435i
+        activate_cam = cam_d405
         mode = 1
         # 送信フラグ
         EMA_ALPHA = 0.30  # 0.1～0.5 で調整（大きいほど追従が速い／ノイズに弱い）
@@ -191,9 +198,9 @@ def main():
                 print("[Debug] Emergency Stop Activated!")
                 continue
             circles = None
-            if D405_STOP_FLAG:
-                print("[Debug] D405 Stop Flag Activated!")
-                continue
+            # if D405_STOP_FLAG:
+            #     print("[Debug] D405 Stop Flag Activated!")
+            #     continue
             # get rgbd images
             color_image, depth_image = get_rgbd_images(activate_cam)
 
