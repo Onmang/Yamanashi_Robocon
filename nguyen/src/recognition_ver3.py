@@ -97,9 +97,24 @@ AREA_MIN_POST = 150  # post用三角形最小面積
 ALPHA_VAL = 0.8  # 安全pathマージン
 CHANGE_CAMERA_THRE_D435I = 600  # mm
 CHANGE_CAMERA_THRE_D405 = CHANGE_CAMERA_THRE_D435I + 150  # mm
-dist_th_1 = 70  #70  # mm
+dist_th_1 = 70  #70  # mm, plan B : 200
 dist_move = 70  # mm ボール打つ準備時の移動距離
 angle_th_1 = 1  # deg
+
+# plan B: d405で認識できない場合に使うモード
+PLAN_B = False
+if PLAN_B:
+    dist_th_1 = 200  # mm
+    dist_plan_b = 130  # mm
+    
+# ボール色指定
+if False: # 青いボール
+    ball_d435i = 2
+    ball_d405  = 9
+else: # 黄色ボール
+    ball_d435i = 1
+    ball_d405  = 1
+    
 
 # ゴール認識閾値 、2打目以上、通常
 dist_min_cm_goal = 30  # cm
@@ -199,7 +214,7 @@ def main():
             },
             dis_param_path=PARAM_PATH_DIS_D435I,
             hough_param_path=PARAM_HOUGH_D435I,
-            ball_hsv_param_path=PARAM_PATH_HSV[1],
+            ball_hsv_param_path=PARAM_PATH_HSV[ball_d435i],
         )
 
         # RealSense D405 カメラ初期化
@@ -220,7 +235,7 @@ def main():
             },
             dis_param_path=PARAM_PATH_DIS_D405,
             hough_param_path=PARAM_HOUGH_D405, 
-            ball_hsv_param_path=PARAM_PATH_HSV[1],
+            ball_hsv_param_path=PARAM_PATH_HSV[ball_d405],
         )
 
         # init activate cam
@@ -504,6 +519,13 @@ def main():
                                 send_dist_mm = 0
                                 send_angle_deg = 0    
                                 rasp_mode = 200
+                                if PLAN_B:
+                                    ## plan B ##
+                                    ## d405で認識できない場合の代替ルート
+                                    mode = 4
+                                    send_dist_mm = dist_plan_b
+                                    send_angle_deg = 0
+                                    time.sleep(1.0)
                             else:
                                 mode = 1
                                 send_dist_mm = dist_mm
@@ -653,6 +675,7 @@ def main():
                         time.sleep(hit_delay_time)  # 打つ時間待機
                         print("[Debug] Delay finished.")
                         delay_after_hit = False
+
                 except Exception as e:
                     print("Failed to write to serial:", e)
                     pass
