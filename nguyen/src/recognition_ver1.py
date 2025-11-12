@@ -4,6 +4,7 @@
 # 2025/11/03 d405にも対応
 
 import json
+
 import sys
 import time
 from pathlib import Path
@@ -63,7 +64,7 @@ def main():
         print("============ Error =============================================")
         print("Make sure that it is not connected more than 2 cameras at the same time")
         print(
-            "Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker, 8:white, 9:blue_d405]"
+            "Usage: python recognition_ver1.py [0:red, 1:yellow, 2:blue, 3:flag, 4:green, 5:teaground, 6:laf, 7:banker, 8:white, 9:blue_d405, 10:post, 11:yellow_d435i] [d405/d435i]"
         )
         print("Example for D405 camera: python recognition_ver1.py 0 d405")
         print("Example for D435i camera: python recognition_ver1.py 0 d435i")
