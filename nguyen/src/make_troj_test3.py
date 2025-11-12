@@ -4,7 +4,7 @@ import pyrealsense2 as rs
 import json
 from pathlib import Path
 
-
+cd import
 IMG_PATH = "original.png"
 
 WIN_HSV     = "HSV Control"
