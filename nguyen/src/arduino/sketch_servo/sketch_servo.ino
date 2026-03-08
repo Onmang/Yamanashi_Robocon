@@ -1,9 +1,16 @@
 #include <Servo.h>
 
+#define SERVO_PIN 9
+
 Servo myservo;  // サーボオブジェクトを作成
 
 void setup() {
-  myservo.attach(9);  // サーボを9番ピンに接続
+  // 適切な角度はここを調整する pulse_min と pulse_max 
+  // 2025/11/11 調整 SG90
+  int pulse_min = 490; // default 544us
+  int pulse_max = 2490; // default 2400us
+  myservo.attach(SERVO_PIN, pulse_min, pulse_max);  // サーボを9番ピンに接続
+
 
   // シリアル通信を開始 (ボーレートは 9600 bps)
   Serial.begin(9600);
@@ -25,6 +32,7 @@ void loop() {
     // サーボに角度を指示
     // Servoライブラリは、0未満の値は0、180より大きい値は180として自動的に処理します
     myservo.write(angle);
+    delay(1000);
 
     // どの角度に設定したかをシリアルモニタにフィードバック表示
     Serial.print("サーボを ");
