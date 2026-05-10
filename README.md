@@ -43,8 +43,8 @@ echo "Environment: Robocon Yamanashi (Python: \$(python3 --version))
 ### 2. エイリアス（ショートカット）の登録
 どこからでも robocon と打つだけで上記スクリプトを実行できるよう、~/.bashrc にエイリアスを追記します。
 
-# ~/.bashrc の末尾に追記
 ```bash
+# ~/.bashrc の末尾に追記
 alias robocon='source ~/scripts/move_robocon.sh'
 ```
 
