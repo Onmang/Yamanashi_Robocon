@@ -48,7 +48,7 @@ def parse_args():
         
     """
     parser = argparse.ArgumentParser(description="YOLOv8 + RealSense リアルタイム検出")
-    parser.add_argument("--model", type=str, default="/home/konfi/robocon_yamanashi/Yamanashi_Robocon/nguyen/src/yolo_model/detect_5class_v8n/weights/best.pt", help="YOLOv8モデルパス")
+    parser.add_argument("--model", type=str, default="/home/konfi/robocon_yamanashi/Yamanashi_Robocon/nguyen/src/yolo_model/detect_5class_v8n/weights/best.onnx", help="YOLOv8モデルパス")
     parser.add_argument("--conf", type=float, default=0.5, help="信頼度閾値 (0~1)")
     parser.add_argument("--iou", type=float, default=0.45, help="IoU閾値")
     parser.add_argument("--width", type=int, default=640, help="カメラ解像度 幅")

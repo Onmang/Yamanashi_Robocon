@@ -1,0 +1,4 @@
+/usr/src/tensorrt/bin/trtexec --onnx=/home/konfi/robocon_yamanashi/Yamanashi_Robocon/nguyen/src/yolo_model/detect_5class_v8n/weights/best.onnx  --saveEngine=/home/konfi/robocon_yamanashi/Yamanashi_Robocon/nguyen/src/yolo_model/detect_5class_v8n/weights/best.engine --fp16
+
+
+
