@@ -11,11 +11,18 @@ ultralytics -> "https://i7y.org/en/yolov8-on-jetson-nano/"
 tensorrt -> "sudo apt install nvidia-tensorrt"
 
 ### nvcc PATHを通す
-
+```bash
 export PATH=/usr/local/cuda/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
 echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
 source ~/.bashrc
 nvcc --version
+```
+
+### On Jetson Nano, list connected serial devices:
+```bash
+ls /dev/tty*
+```
+
 
