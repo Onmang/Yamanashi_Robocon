@@ -25,4 +25,12 @@ nvcc --version
 ls /dev/tty*
 ```
 
+### install onnx gpu
+```bash
+pip3 install --force-reinstall --no-deps /home/konfi/Downloads/onnxruntime_gpu-1.8.0-cp38-cp38-linux_aarch64.whl
+```
+
+```bash
+python3 -c "import onnxruntime as ort; print(ort.__version__, ort.get_available_providers())"
+```
 

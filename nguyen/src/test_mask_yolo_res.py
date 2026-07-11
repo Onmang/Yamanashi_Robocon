@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""detect_ball_test_jetson.py
+"""test_mask_yolo_res.py
 
 yolo学習済みモデルでリアルタイム物体検出
 for jetson nano
+test for move mortion
 
 Example:
     $ ./detect_ball_test.py  # after run: chmod +x detect_ball_test.py
@@ -13,8 +14,8 @@ Author:
     nguyen
 
 Date:
-    2026-06-27
-
+    2026-07-11
+test.py
 Version:
     1.0.0
 
@@ -26,7 +27,7 @@ Requirements:
     - opencv-python >= 4.13.0.92    https://pypi.org/project/opencv-python/
 
 History:
-    - 2026-06-27: nguyen -新規作成
+    - 2026-07-11: nguyen -新規作成
 """
 
 import argparse
@@ -211,7 +212,7 @@ def main():
             # YOLOv8 推論
             results = model.predict(
                 source=color_image,
-                #classes=[3],
+                classes=[3],
                 conf=args.conf,
                 iou=args.iou,
                 verbose=False,

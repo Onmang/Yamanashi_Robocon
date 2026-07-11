@@ -126,6 +126,10 @@ def init_realsense_camera(
     # align(color) 用意
     align = rs.align(rs.stream.color)
 
+    # 自動露光が安定するまで数フレーム捨てる
+    for _ in range(5):
+        pipeline.wait_for_frames()
+
     # カメラ内部パラメータ取得・保存
     color_stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
     intr = color_stream.get_intrinsics()
@@ -224,3 +228,90 @@ def load_filter_distance_from_json(config_path: str):
 
     return d_min_cm, d_max_cm
 
+# get rgb-d
+def get_rgbd_images(activate_cam):
+    # Get frameset of color and depth
+    frames = activate_cam.pipeline.wait_for_frames()
+
+    # Align the depth frame to color frame
+    aligned_frames = activate_cam.align.process(frames)
+
+    # Get aligned frames
+    depth_frame = aligned_frames.get_depth_frame()
+    color_frame = aligned_frames.get_color_frame()
+
+    if not depth_frame or not color_frame:
+        return None, None
+
+    depth_image = np.asanyarray(depth_frame.get_data())
+    color_image = np.asanyarray(color_frame.get_data())
+
+    return color_image, depth_image
+
+
+# get frame
+def get_rgbd_frames(activate_cam):
+    # Get frameset of color and depth
+    frames = activate_cam.pipeline.wait_for_frames()
+
+    # Align the depth frame to color frame
+    aligned_frames = activate_cam.align.process(frames)
+
+    # Get aligned frames
+    depth_frame = aligned_frames.get_depth_frame()
+    color_frame = aligned_frames.get_color_frame()
+
+    return color_frame, depth_frame
+
+
+
+# --------------------------------------------
+# 角度・距離のEMA平滑化
+# --------------------------------------------
+def smooth_angle_distance(rob3d, ema_alpha, prev_angle, prev_dist):
+    """
+    ロボット座標から角度と距離を計算し、
+    過去値(prev_angle, prev_dist)とEMA平滑化して返す。
+
+    Args:
+        cam3d (tuple or np.ndarray): カメラ座標 (Xc, Yc, Zc) [m]
+        rob3d (tuple or np.ndarray): ロボット座標 (Xr, Yr, Zr) [m]
+
+    """
+    Xr, Yr, _ = rob3d
+
+    # 距離[mm]
+    dist_mm_raw = round(np.sqrt(Xr**2 + Yr**2) * 1000.0)
+
+    # 角度[deg]（ロボット+Y基準）
+    angle_deg_raw = round(compute_angles_from_position(Xr, Yr))
+
+    # === EMA平滑化 ===
+    angle_deg = round(ema_alpha * angle_deg_raw + (1 - ema_alpha) * prev_angle)
+    dist_mm = round(ema_alpha * dist_mm_raw + (1 - ema_alpha) * prev_dist)
+
+    return angle_deg, dist_mm
+
+
+
+# -----------------------------------------------------------------------------
+# [get_depth_at_bbox] バウンディングボックス中心の深度 [mm] を取得する
+# -----------------------------------------------------------------------------
+# Updates:
+# -----------------------------------------------------------------------------
+def get_depth_at_bbox(depth_frame, x1: int, y1: int, x2: int, y2: int) -> float:
+    """
+    バウンディングボックス中心の深度 [mm] を取得する
+    Args:
+        depth_frame: 深度フレーム
+        x1 (int): バウンディングボックスの左上X座標
+        y1 (int): バウンディングボックスの左上Y座標
+        x2 (int): バウンディングボックスの右下X座標
+        y2 (int): バウンディングボックスの右下Y座標
+    Returns:
+        float: 深度 [mm]
+    """
+    cx = int((x1 + x2) / 2)
+    cy = int((y1 + y2) / 2)
+    depth_value = depth_frame.get_distance(cx, cy)  # メートル単位
+    return depth_value * 1000  # mm に変換
