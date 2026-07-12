@@ -19,4 +19,6 @@ Thumbs.db
 # 仮想環境とクローンしたライブラリを除外
 python38/
 ultralytics/
-nguyen/src/yolo/*.whl
+*.whl
+*.engine
+*.onnx
