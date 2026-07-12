@@ -39,7 +39,11 @@ from rgbd_utils import (
     init_realsense_camera,
     get_rgbd_frames,
     smooth_angle_distance,
-    get_depth_at_bbox
+    get_depth_at_bbox,
+    project_center_to_robot,
+    compute_angles_from_position,
+    encode_angle,
+    encode_distance_ver2
 )
 
 from path_config import (
@@ -49,15 +53,22 @@ from path_config import (
 
 # macro
 DETECTION = "detection"
+HIT = "hit"
 BALL = "ball"
 FLAG = "flag"
 POLE = "pole"
-#  ball_ball:0,  flag:1, pole:2, red_ball:3, yellow_ball:4
-cls_dic = {'blue':0, 'flag':1, 'pole':2, 'red':3, 'yellow':4}
+# ball_ball:0, flag:1, pole:2, red_ball:3, yellow_ball:4
+ball_idx = 3
+flag_idx = 1
+pole_idx = 2
 bbox_color = (0, 255, 0) # green,  バウンディングボックス描画
 
+# threshold
+dist_th_1 = 100  #70  # mm
+angle_th_1 = 1  # deg
+
 # arduino シリアル通信設定
-ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF
+ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF
 if ARDUINO:
     global ser
     serial_port = "/dev/ttyACM0"  # arduino UNO
@@ -112,8 +123,8 @@ def main():
         #     fps=FPS,
         #     extrinsic_guess={
         #         "tx": -(32.5 * 0.001),  # m
-        #         "ty": -50 * 0.001,  # m
-        #         "tz": 200 * 0.001,  # m
+        #         "ty": 0,  # m, -50 * 0.001
+        #         "tz": 0,  # m, 200 * 0.001
         #         "rx_deg": -90,
         #         "ry_deg": 0,
         #         "rz_deg": 0,
@@ -129,9 +140,9 @@ def main():
             height=H,
             fps=FPS,
             extrinsic_guess={
-                "tx": -(32.5 * 0.001),  # m
-                "ty": -50 * 0.001,  # m
-                "tz": 200 * 0.001,  # m
+                "tx": 0,  # m
+                "ty": 0,  # m
+                "tz": 0,  # m
                 "rx_deg": -90,
                 "ry_deg": 0,
                 "rz_deg": 0,
@@ -158,7 +169,11 @@ def main():
         # main loop
         while True:
             # ここにメインループの処理を記述
+            state = "LOST"
             mode = 0  # arduino mode
+            send_dist_mm = 0
+            send_angle_deg = 0
+            recog_res = False  # 検出結果初期化
 
             # 場合分け
             # ----------
@@ -166,11 +181,6 @@ def main():
             # ----------
             if rasp_mode == DETECTION: # rasp_mode == DETECTION
     
-                state = "LOST"
-                send_dist_mm = 0
-                send_angle_deg = 0
-                recog_res = False  # 検出結果初期化
-
                 # 画像取得, すべてのモード共通
                 color_frame, depth_frame = get_rgbd_frames(activate_cam)
 
@@ -185,6 +195,7 @@ def main():
                 # ball_ball:0, flag:1, pole:2, red_ball:3, yellow_ball:4
                 results = model.predict(
                     source=color_image,
+                    #classes=[ball_idx, flag_idx, pole_idx],
                     conf=conf,
                     iou=iou,
                     verbose=False,
@@ -201,19 +212,28 @@ def main():
 
                 # best ball
                 best_ball_box = None
-                max_conf = 0.0
+                best_flag_box = None
+                best_pole_box = None
+                max_ball_conf = 0.0
+                max_flag_conf = 0.0
+                max_pole_conf = 0.0
 
                 # check the all boxes
                 for box in result.boxes:
                     cls_id_ = int(box.cls[0]) # class ID
                     conf_ = float(box.conf[0]) # conf.
 
-                    # detect ball
-                    if target_obj == BALL and cls_id_ == cls_dic['red']:
-                        if conf_ > max_conf:
-                            max_conf = conf_
-                            best_ball_box = box
-
+                    # input the best conf.
+                    if cls_id_ == ball_idx and conf_ > max_ball_conf:
+                        max_ball_conf = conf_
+                        best_ball_box = box
+                    elif cls_id_== flag_idx and conf_ > max_flag_conf:
+                        max_flag_conf = conf_
+                        best_flag_box = box
+                    elif cls_id_ == pole_idx and conf_ > max_pole_conf:
+                        max_pole_conf = conf_
+                        best_pole_box = box
+                        
                 # check if None
                 if target_obj == BALL and best_ball_box is not None:
 
@@ -227,12 +247,35 @@ def main():
                     depth_mm = get_depth_at_bbox(depth_frame, x1, y1, x2, y2)
                     depth_str = f"{depth_mm:.0f}mm" if depth_mm > 0 else "N/A"
 
+                    # result
+                    recog_res = True
+                    # --- 3D座標計算 ---
+                    depth_image = np.asanyarray(depth_frame.get_data())
+                    cam3d, rob3d = project_center_to_robot(
+                        u=int((x1 + x2) / 2),
+                        v=int((y1 + y2) / 2),
+                        depth_image=depth_image,
+                        depth_scale=activate_cam.depth_scale,
+                        intr=activate_cam.intr,
+                        T_cam2rob=activate_cam.T_cam2rob,
+                        roi=7,
+                    )
+
+                    # angle deg
+                    if cam3d is None or rob3d is None:
+                        continue		
+                    Xr, Yr, _ = rob3d  # [m]
+                    # 正面方向に近いほど小さい
+                    ang_ = compute_angles_from_position(Xr, Yr)
+                    angle_str = f"{ang_:+6.1f}deg"
+
+
                     # バウンディングボックス描画
                     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), bbox_color, 2)
 
                     # ラベル
-                    label = f"{bst_cls_name} {bst_conf:.2f} | {depth_str}"
-                    print(f"[Debug] Detection result: {label} | {fps_text}")
+                    label = f"{bst_cls_name} {bst_conf:.2f} | {depth_str:4}"
+                    print(f"[Debug] Detected: {label} | {angle_str} | {fps_text}")
                     label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
                     lx, ly = x1, max(y1 - 10, label_size[1])
                     cv2.rectangle(
@@ -252,43 +295,93 @@ def main():
                         2,
                     )
 
+                # 検出成功
+                if recog_res:
+                    # 距離を平均化, test:cam3d, truth:rob3d
+                    angle_deg, dist_mm = smooth_angle_distance(
+                        rob3d, EMA_ALPHA, prev_angle, prev_dist
+                    )
+
+                    # 前回値更新
+                    prev_angle = angle_deg
+                    prev_dist = dist_mm
+
+                    # 見失いカウンタリセット
+                    miss_count = 0
+
+                    # 表示情報
+                    state = "TRACK"
+                else:
+                    # 見失いカウンタ増加
+                    miss_count += 1
+                    if miss_count <= MISS_LIMIT:
+                        state = "HOLD"
+                        print(f"[Debug] State: {state}")
+                    else:
+                        state = "LOST"
+                        print(f"[Debug] State: {state}")
+                        prev_angle = 0
+                        prev_dist = 0
+
+                # put text state
+                cv2.putText(
+                    annotated_image, state, (10, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2,
+                )
+                
                 # カラー画像表示
-                #cv2.imshow("YOLOv8 + RealSense", annotated_image)
+                cv2.imshow("YOLOv8 + RealSense", annotated_image)
 
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
 
-                # # 検出成功
-                # if recog_res:
-                #     # 距離を平均化
-                #     angle_deg, dist_mm = smooth_angle_distance(
-                #         rob3d, EMA_ALPHA, prev_angle, prev_dist
-                #     )
+            # move
+            if rasp_mode == DETECTION:
+                if state == "TRACK":
+                    if dist_mm < dist_th_1:
+                        mode = 0
+                        send_dist_mm = 0
+                        send_angle_deg = 0    
+                        rasp_mode = DETECTION
+                    else:
+                        mode = 1
+                        send_dist_mm = dist_mm
+                        send_angle_deg = angle_deg 
+                        rasp_mode = DETECTION
+                elif state == "HOLD":
+                        mode = 1
+                        send_dist_mm = prev_dist
+                        send_angle_deg = prev_angle
+                elif state == "LOST":
+                        mode = 0
+                        send_dist_mm = 0
+                        send_angle_deg = 0
+            elif rasp_mode == HIT:
+                pass
 
-                #     # 前回値更新
-                #     prev_angle = angle_deg
-                #     prev_dist = dist_mm
 
-                #     # 見失いカウンタリセット
-                #     miss_count = 0
+            # シリアル送信
+            if ARDUINO:
+                angle_code = encode_angle(send_angle_deg)
+                dist_code = encode_distance_ver2(send_dist_mm)
+                msg = f"{mode}{angle_code}{dist_code}\n"
+                try:
+                    ser.write(msg.encode("ascii"))
+                    #print(f"[Debug] Sent {(state)}: {msg.strip()}")
+                    # if delay_after_hit:
+                    #     print("[Debug] Delay for hitting:", hit_delay_time)
+                    #     time.sleep(hit_delay_time)  # 打つ時間待機
+                    #     print("[Debug] Delay finished.")
+                    #     delay_after_hit = False
 
-                #     # 表示情報
-                #     state = "TRACK"
-    
-                # else:
-                #     # 見失いカウンタ増加
-                #     miss_count += 1
-                #     if miss_count <= MISS_LIMIT:
-                #         state = "HOLD"
-                #     else:
-                #         state = "LOST"
-                #         prev_angle = 0
-                #         prev_dist = 0
+                except Exception as e:
+                    print("Failed to write to serial:", e)
+                    pass
 
-    # except KeyboardInterrupt:
-    #         print("\n===== Keyboard Interrupt =====")
-    #         print("[FINISHED].")
-    #         print("==============================\n")
+    except KeyboardInterrupt:
+            print("\n===== Keyboard Interrupt =====")
+            print("[FINISHED].")
+            print("==============================\n")
     finally:
         cv2.destroyAllWindows()
         if ARDUINO and ser is not None:

@@ -315,3 +315,83 @@ def get_depth_at_bbox(depth_frame, x1: int, y1: int, x2: int, y2: int) -> float:
     cy = int((y1 + y2) / 2)
     depth_value = depth_frame.get_distance(cx, cy)  # メートル単位
     return depth_value * 1000  # mm に変換
+
+# 円中心の3D点を求めてロボット座標へ変換して表示するユーティリティ
+def project_center_to_robot(u, v, depth_image, depth_scale, intr, T_cam2rob, roi=5):
+    H, W = depth_image.shape[:2]
+    u = int(np.clip(u, 0, W - 1))
+    v = int(np.clip(v, 0, H - 1))
+
+    # 小さなROIの中央値でZを安定化
+    r = max(1, roi // 2)
+    u0, u1 = max(0, u - r), min(W, u + r + 1)
+    v0, v1 = max(0, v - r), min(H, v + r + 1)
+    patch = depth_image[v0:v1, u0:u1]
+    nz = patch[patch > 0]
+    if nz.size == 0:
+        return None, None  # 深度無し
+
+    depth_m = np.median(nz) * depth_scale  # [m]
+
+    # 逆投影（ピンホール）
+    fx, fy, ppx, ppy = intr.fx, intr.fy, intr.ppx, intr.ppy
+    X = (u - ppx) / fx * depth_m
+    Y = (v - ppy) / fy * depth_m
+    Z = depth_m
+
+    P_cam = np.array([X, Y, Z, 1.0], dtype=np.float64)
+    P_rob_h = T_cam2rob @ P_cam
+    P_rob = P_rob_h[:3] / max(1e-12, P_rob_h[3])
+
+    return (X, Y, Z), P_rob
+
+
+# 座標から角度を計算する
+def compute_angles_from_position(x, y):
+    """
+    3D座標から方位角と仰角を計算
+    本当はカメラの画角てきに90度以上ないけど、マップにゴールの位置を記録するために、90度以上も扱う。
+
+    Args:
+        x (float): X座標
+        y (float): Y座標
+
+    Returns:
+        tuple: 方位角（ラジアン）
+    """
+
+    # 「y軸を前方向（ロボットの進行方向）」にしたい場合は 引数を入れ替える (atan2(x, y))
+    angle_deg = np.degrees(np.arctan2(x, y))
+    return angle_deg
+
+# 角度を符号に合わせて4桁文字列に変換する
+def encode_angle(angle_deg: float) -> str:
+    """
+    角度を4桁文字列に変換する。
+    +35 → '1035', -45 → '0045', 0 → '0000'
+    """
+    sign_flag = 1 if angle_deg >= 0 else 0
+    abs_angle = int(abs(angle_deg)) % 1000  # 上限は999°まで
+    return f"{sign_flag}{abs_angle:03d}"  # 1桁+3桁=4桁
+
+
+
+def encode_distance_ver2(distance_mm=0):
+    """
+    距離を5桁文字列に変換する。
+    +1000 → '01000', -500 → '00500', 0 → '00000'
+    先頭1桁が符号(1:正, 0:負)、残り4桁が絶対値(mm)
+    """
+    # 小数が来てもよいようにいったんintにする
+    d = int(distance_mm)
+
+    if d < 0:
+        sign_flag = 0
+        d = -d  # 絶対値にする
+    else:
+        sign_flag = 1
+
+    # 4桁に収まるように（0〜9999）
+    d = d % 10000
+
+    return f"{sign_flag}{d:04d}"
