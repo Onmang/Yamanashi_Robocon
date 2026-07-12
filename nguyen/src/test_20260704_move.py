@@ -49,7 +49,7 @@ from path_config import (
 
 # macro
 DETECTION = "detection"
-BALL = "y_ball"
+BALL = "ball"
 FLAG = "flag"
 POLE = "pole"
 #  ball_ball:0,  flag:1, pole:2, red_ball:3, yellow_ball:4
@@ -87,8 +87,12 @@ def main():
     iou = 0.45 # IoU閾値
 
     # モデル読み込み
-    print(f"[INFO] モデル読み込み中: {YOLO_MODEL}")
+    print(f"[INFO] Starting to load YOLO model: {YOLO_MODEL}")
+    s_time = time.time()
     model = YOLO(YOLO_MODEL, task='detect')
+    e_time = time.time()
+    run_time = e_time - s_time
+    print(f"[Debug] Run time for loading YOLO model: {run_time:.3f} sec.")
 
     activate_cam = None 
     try:
@@ -142,7 +146,7 @@ def main():
         # --------------------------------------------
         # メインループ
         # --------------------------------------------
-        print("[DEBUG] main loop starting....")
+        print("[DEBUG] Main loop is starting....")
         EMA_ALPHA = 0.30  # 0.1～0.5 で調整（大きいほど追従が速い／ノイズに弱い）
         MISS_LIMIT = 10  # 短期見失いの許容量（フレーム数）
         prev_angle = 0  # 直近の平滑化角度[deg]
@@ -156,12 +160,11 @@ def main():
             # ここにメインループの処理を記述
             mode = 0  # arduino mode
 
-
             # 場合分け
             # ----------
             # DETECTION :  ball_ball:0,  flag:1, pole:2, red_ball:3, yellow_ball:4,
             # ----------
-            if rasp_mode == DETECTION:
+            if rasp_mode == DETECTION: # rasp_mode == DETECTION
     
                 state = "LOST"
                 send_dist_mm = 0
@@ -182,7 +185,6 @@ def main():
                 # ball_ball:0, flag:1, pole:2, red_ball:3, yellow_ball:4
                 results = model.predict(
                     source=color_image,
-                    #classes=[3],
                     conf=conf,
                     iou=iou,
                     verbose=False,
@@ -197,29 +199,29 @@ def main():
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2,
                 )
 
-                # detect ball
-                if target_obj == BALL:
+                # best ball
+                best_ball_box = None
+                max_conf = 0.0
 
-                    ball_mask = (result.boxes.cls == cls_dic["red"])
-                    ball_boxes = result.boxes[ball_mask]
+                # check the all boxes
+                for box in result.boxes:
+                    cls_id_ = int(box.cls[0]) # class ID
+                    conf_ = float(box.conf[0]) # conf.
 
-                    # check if results is empty
-                    if len(ball_boxes) == 0:
-                        continue
+                    # detect ball
+                    if target_obj == BALL and cls_id_ == cls_dic['red']:
+                        if conf_ > max_conf:
+                            max_conf = conf_
+                            best_ball_box = box
 
-                    # check the conf.
-                    ball_confs = ball_boxes.conf
-                    best_idx = torch.argmax(ball_confs).item()
-                    best_box = ball_boxes[best_idx]
-
-                    # class id
-                    cls_id = int(best_box.cls[0])
-                    cls_name = result.names[cls_id]
-
+                # check if None
+                if target_obj == BALL and best_ball_box is not None:
 
                     # 座標・スコア・クラス取得
-                    x1, y1, x2, y2 = map(int, best_box.xyxy[0])
-                    conf = float(best_box.conf[0])
+                    x1, y1, x2, y2 = map(int, best_ball_box.xyxy[0])
+                    bst_conf = float(best_ball_box.conf[0])
+                    bst_cls_id = int(best_ball_box.cls[0])
+                    bst_cls_name = result.names[bst_cls_id]
 
                     # 深度取得
                     depth_mm = get_depth_at_bbox(depth_frame, x1, y1, x2, y2)
@@ -229,7 +231,8 @@ def main():
                     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), bbox_color, 2)
 
                     # ラベル
-                    label = f"{cls_name} {conf:.2f} | {depth_str}"
+                    label = f"{bst_cls_name} {bst_conf:.2f} | {depth_str}"
+                    print(f"[Debug] Detection result: {label} | {fps_text}")
                     label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
                     lx, ly = x1, max(y1 - 10, label_size[1])
                     cv2.rectangle(
@@ -250,7 +253,10 @@ def main():
                     )
 
                 # カラー画像表示
-                cv2.imshow("YOLOv8 + RealSense", annotated_image)
+                #cv2.imshow("YOLOv8 + RealSense", annotated_image)
+
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
 
                 # # 検出成功
                 # if recog_res:
@@ -284,6 +290,7 @@ def main():
     #         print("[FINISHED].")
     #         print("==============================\n")
     finally:
+        cv2.destroyAllWindows()
         if ARDUINO and ser is not None:
             ser.close()
         if activate_cam is not None:
