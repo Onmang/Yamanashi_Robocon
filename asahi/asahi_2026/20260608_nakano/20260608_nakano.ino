@@ -315,7 +315,7 @@ void parseNumericCommand(String line) {
 
   int signFlagDeg = line.substring(1, 2).toInt();
   int angleAbs = line.substring(2, 5).toInt();
-  int angleSigned = (signFlagDeg == 1) ? angleAbs : -angleAbs;
+  int angleSigned = (signFlagDeg == 1) ? -angleAbs : angleAbs;
 
   int signFlagDis = line.substring(5, 6).toInt();
   int disAbs = line.substring(6, 10).toInt();
