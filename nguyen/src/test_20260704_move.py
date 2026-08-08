@@ -58,7 +58,7 @@ BALL = "ball"
 FLAG = "flag"
 POLE = "pole"
 # ball_ball:0, flag:1, pole:2, red_ball:3, yellow_ball:4
-ball_idx = 3
+ball_idx = 4
 flag_idx = 1
 pole_idx = 2
 bbox_color = (0, 255, 0) # green,  バウンディングボックス描画
@@ -71,7 +71,7 @@ angle_th_1 = 1  # deg
 ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF
 if ARDUINO:
     global ser
-    serial_port = "/dev/ttyACM0"  # arduino UNO
+    serial_port = "/dev/ttyUSB0"  # arduino UNO, ttyACM0
     
     baud_rate = 115200  # 9600, 115200
     ser = serial.Serial(
@@ -115,40 +115,40 @@ def main():
         W, H, FPS = 640, 480, 30
 
         # RealSense カメラ初期化
-        # activate_cam = init_realsense_camera(
-        #     name="d435i",
-        #     serial="949122070535",  # 実機のシリアル
-        #     width=W,
-        #     height=H,
-        #     fps=FPS,
-        #     extrinsic_guess={
-        #         "tx": -(32.5 * 0.001),  # m
-        #         "ty": 0,  # m, -50 * 0.001
-        #         "tz": 0,  # m, 200 * 0.001
-        #         "rx_deg": -90,
-        #         "ry_deg": 0,
-        #         "rz_deg": 0,
-        #     },
-        #     dis_param_path=PARAM_PATH_DIS_LIMIT,
-        # )
-
-        # for debug
         activate_cam = init_realsense_camera(
-            name="d405",
-            serial="218622274519",  # 実機のシリアル
+            name="d435i",
+            serial="949122070535",  # 実機のシリアル
             width=W,
             height=H,
             fps=FPS,
             extrinsic_guess={
-                "tx": 0,  # m
-                "ty": 0,  # m
-                "tz": 0,  # m
+                "tx": -(32.5 * 0.001),  # m
+                "ty": 0,  # m, -50 * 0.001
+                "tz": 0,  # m, 200 * 0.001
                 "rx_deg": -90,
                 "ry_deg": 0,
                 "rz_deg": 0,
             },
             dis_param_path=PARAM_PATH_DIS_LIMIT,
         )
+
+        # for debug
+        # activate_cam = init_realsense_camera(
+        #     name="d405",
+        #     serial="218622274519",  # 実機のシリアル
+        #     width=W,
+        #     height=H,
+        #     fps=FPS,
+        #     extrinsic_guess={
+        #         "tx": 0,  # m
+        #         "ty": 0,  # m
+        #         "tz": 0,  # m
+        #         "rx_deg": -90,
+        #         "ry_deg": 0,
+        #         "rz_deg": 0,
+        #     },
+        #     dis_param_path=PARAM_PATH_DIS_LIMIT,
+        # )
 
         # init activate cam
         time.sleep(1.0)  # カメラ安定化待ち
