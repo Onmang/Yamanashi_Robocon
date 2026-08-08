@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""test_20260704_move.py
+"""test_20260808_move_hit.py
 
-test for move 
+test for moving and hitting
 trace ball
 "recognition_ver3.py" base
 
@@ -23,10 +23,10 @@ Author:
     nguyen
 
 Date:
-    2026-07-04
+    2026-08-05
 
 History:
-    - 2026-07-04: nguyen coped from 2025
+    - 2026-08-05: nguyen 
 """
 import time
 import numpy as np
@@ -43,7 +43,8 @@ from rgbd_utils import (
     project_center_to_robot,
     compute_angles_from_position,
     encode_angle,
-    encode_distance_ver2
+    encode_distance_ver2,
+    detect_triangle_in_bbox
 )
 
 from path_config import (
@@ -53,6 +54,7 @@ from path_config import (
 
 # macro
 DETECTION = "detection"
+ARDUINO_MOVE = "arduino_move"
 HIT = "hit"
 BALL = "ball"
 FLAG = "flag"
@@ -62,6 +64,10 @@ ball_idx = 4
 flag_idx = 1
 pole_idx = 2
 bbox_color = (0, 255, 0) # green,  バウンディングボックス描画
+
+# しきい値関係
+AREA_MIN = 100  # 小ノイズ除去
+AREA_MIN_FLAG = 120  # flag用三角形最小面積
 
 # threshold
 dist_th_1 = 100  # mm
@@ -84,7 +90,6 @@ if ARDUINO:
     ser.reset_input_buffer()
     ser.reset_output_buffer()
     print("[Debug] Serial Port was opened:", serial_port)
-
 
 def main():
     """
@@ -236,7 +241,6 @@ def main():
                         
                 # check if None
                 if target_obj == BALL and best_ball_box is not None:
-
                     # 座標・スコア・クラス取得
                     x1, y1, x2, y2 = map(int, best_ball_box.xyxy[0])
                     bst_conf = float(best_ball_box.conf[0])
@@ -294,6 +298,10 @@ def main():
                         (0, 0, 0),
                         2,
                     )
+                elif target_obj == FLAG and best_flag_box is not None:
+                    triangles = detect_triangle_in_bbox(color_image, best_flag_box.xyxy[0], epsilon_ratio=0.08, area_min=AREA_MIN_FLAG)
+                    if triangles is not None:
+                        cv2.polylines(annotated_image, [triangles], isClosed=True, color=(0, 255, 255), thickness=2)
 
                 # 検出成功
                 if recog_res:
@@ -331,18 +339,34 @@ def main():
                 
                 # カラー画像表示
                 cv2.imshow("YOLOv8 + RealSense", annotated_image)
-
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
+
+            # 場合分け
+            # ----------
+            # ARDUINO_MOVE :  Arduinoがボールの距離を微調整
+            # ----------    
+            elif rasp_mode == ARDUINO_MOVE:
+                # arduino調整終わったかどうかの確認
+                if ser.in_waiting > 0:
+                    line = ser.readline().decode('utf-8', errors="ignore").rstrip()
+                    if line == "DONE":
+                        print("[Debug] Arduino reported action complete")
+                        # ここで完了フラグを立てる、次の状態に遷移するなど
+                        rasp_mode = DETECTION 
+                        target_obj = FLAG
+                else:
+                    # move mode
+                    print("[Debug] Arduino is running...")
 
             # move
             if rasp_mode == DETECTION:
                 if state == "TRACK":
                     if dist_mm < dist_th_1:
-                        mode = 0
+                        mode = 5
                         send_dist_mm = 0
                         send_angle_deg = 0    
-                        rasp_mode = DETECTION
+                        rasp_mode = ARDUINO_MOVE
                     else:
                         mode = 1
                         send_dist_mm = dist_mm
@@ -356,6 +380,10 @@ def main():
                         mode = 0
                         send_dist_mm = 0
                         send_angle_deg = 0
+            elif rasp_mode == ARDUINO_MOVE:
+                mode = 5
+                send_dist_mm = 0
+                send_angle_deg = 0    
             elif rasp_mode == HIT:
                 pass
 

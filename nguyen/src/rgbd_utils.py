@@ -395,3 +395,43 @@ def encode_distance_ver2(distance_mm=0):
     d = d % 10000
 
     return f"{sign_flag}{d:04d}"
+
+
+def detect_triangle_in_bbox(frame, bbox, epsilon_ratio=0.08, area_min=200, gaus_k=5, sigmaX=0):
+    """
+    YOLOのbbox内から三角形(旗)を検出する。
+    Args:
+        frame (np.ndarray): 元画像(BGR)
+        bbox (tuple): (x1, y1, x2, y2)
+        epsilon_ratio (float): 近似精度
+        area_min (float): 最小面積
+        gaus_k (int): ガウスフィルターのカーネルサイズ, 5,6,7,9,11などの奇数
+        sigmaX (float): ガウスフィルターのX方向の標準偏差
+    Returns:
+        approx (np.ndarray | None): 三角形輪郭(N×1×2)。見つからなければNone
+    """
+    x1, y1, x2, y2 = map(int, bbox)
+    roi = frame[y1:y2, x1:x2]
+    if roi.size == 0:
+        return None
+
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (gaus_k, gaus_k), sigmaX)
+    edges = cv2.Canny(gray, 50, 150)
+    edges = cv2.dilate(edges, None, iterations=1)  # 輪郭の途切れ対策
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    best = None
+    best_area = 0
+    for cnt in contours:
+        arclen = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon_ratio * arclen, True)
+        area = cv2.contourArea(approx)
+        if len(approx) == 3 and area >= area_min and area > best_area:
+            approx[:, 0, 0] += x1
+            approx[:, 0, 1] += y1
+            best = approx
+            best_area = area
+
+    return best
