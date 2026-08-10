@@ -220,6 +220,10 @@ void loop() {
       mode_val = 0;     // 次のコマンドが来るまで待機
       digitalWrite(EN_PIN, LOW);   // 再度有効化
       delay(1000);
+<<<<<<< HEAD
+=======
+      Serial.println("DONE");
+>>>>>>> e2afda8fee63aec3a17d7db47bcf8569e5674e4c
       break;
     }
 

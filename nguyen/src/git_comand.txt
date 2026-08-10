@@ -7,6 +7,13 @@
 
 ## Git 操作まとめ
 
+<<<<<<< HEAD
+=======
+git remote add origin git@github.com:Onmang/Yamanashi_Robocon.git
+git remote -v   # 確認
+
+
+>>>>>>> e2afda8fee63aec3a17d7db47bcf8569e5674e4c
 ### 今回の流れ
 1. ファイルをステージに追加  
    ```bash
