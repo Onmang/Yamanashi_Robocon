@@ -1,7 +1,7 @@
 // 3-wheel omni robot + last-year style 10-digit command mode
 //
 // Last-year numeric command format (10 digits):
-// [0]   mode
+// [0]   modeq
 // [1]   angle sign flag: 1=+, other=-
 // [2:5] angle abs [deg] 000-999
 // [5]   distance sign flag: 1=+, other=-
@@ -315,7 +315,7 @@ void parseNumericCommand(String line) {
 
   int signFlagDeg = line.substring(1, 2).toInt();
   int angleAbs = line.substring(2, 5).toInt();
-  int angleSigned = (signFlagDeg == 1) ? angleAbs : -angleAbs;
+  int angleSigned = (signFlagDeg == 1) ? -angleAbs : angleAbs;
 
   int signFlagDis = line.substring(5, 6).toInt();
   int disAbs = line.substring(6, 10).toInt();
@@ -373,15 +373,15 @@ void parseNumericCommand(String line) {
       break;
 
     case 5:
-      // Same as text command: ALIGN 0.8
-      // Do not restart the search/alignment while the same mode is continuously sent.
-      targetSensorV = 0.8;
-      if (!(mode == ALIGN_SEARCH_LEFT || mode == ALIGN_SEARCH_RIGHT || mode == ALIGN_BALL) ||
-          !isSameNumericCommand(modeVal, angleSigned, disSigned)) {
-        startAlign(0.8);
-        rememberStartedNumericCommand(modeVal, angleSigned, disSigned);
-      }
-      break;
+       // Same as text command: ALIGN 0.8
+        // Same command is executed only once.
+        targetSensorV = 0.8;
+
+        if (!isSameNumericCommand(modeVal, angleSigned, disSigned)) {
+          startAlign(0.8);
+          rememberStartedNumericCommand(modeVal, angleSigned, disSigned);
+        }
+        break;
 
     case 6:
       // Stepwise BALLROT:
@@ -1115,6 +1115,12 @@ void controlLoop(unsigned long now) {
     Serial.print(y_est);
     Serial.print(F(", th="));
     Serial.println(theta_est * 180.0 / PI);
+
+    // Mode 5 completion notification
+    if (commandMode == 5) {
+      Serial.println(F("DONE"));
+    }
+
 
     prevM1 = c1;
     prevM2 = c2;
