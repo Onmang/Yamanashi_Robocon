@@ -1,7 +1,7 @@
 // 3-wheel omni robot + last-year style 10-digit command mode
 //
 // Last-year numeric command format (10 digits):
-// [0]   mode
+// [0]   modeq
 // [1]   angle sign flag: 1=+, other=-
 // [2:5] angle abs [deg] 000-999
 // [5]   distance sign flag: 1=+, other=-
