@@ -239,7 +239,7 @@ def main():
                         max_pole_conf = conf_
                         best_pole_box = box
                         
-                # check if None
+                # [Ball] check if None
                 if target_obj == BALL and best_ball_box is not None:
                     # 座標・スコア・クラス取得
                     x1, y1, x2, y2 = map(int, best_ball_box.xyxy[0])
@@ -273,7 +273,6 @@ def main():
                     ang_ = compute_angles_from_position(Xr, Yr)
                     angle_str = f"{ang_:+6.1f}deg"
 
-
                     # バウンディングボックス描画
                     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), bbox_color, 2)
 
@@ -298,6 +297,7 @@ def main():
                         (0, 0, 0),
                         2,
                     )
+                # [flag]
                 elif target_obj == FLAG and best_flag_box is not None:
                     triangles = detect_triangle_in_bbox(color_image, best_flag_box.xyxy[0], epsilon_ratio=0.08, area_min=AREA_MIN_FLAG)
                     if triangles is not None:
