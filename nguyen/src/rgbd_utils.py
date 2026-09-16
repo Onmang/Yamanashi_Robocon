@@ -11,6 +11,7 @@ Date:
 
 History:
     - 2026-07-04: nguyen coped from 2025
+    - 2026-09-16: nguyen 旗認識の追加
 """
 import json
 from pathlib import Path
@@ -18,6 +19,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pyrealsense2 as rs
+
+# 赤色 HSV 範囲(赤は色相環の両端にまたがるので2レンジ)
+RED_HSV_LOWER_1 = (0, 80, 50)
+RED_HSV_UPPER_1 = (10, 255, 255)
+RED_HSV_LOWER_2 = (170, 80, 50)
+RED_HSV_UPPER_2 = (180, 255, 255)
 
 class CameraParam:
     """1台のRealSenseカメラに対応するパラメータと状態"""
@@ -465,3 +472,78 @@ def find_vertical_edge(tri):
             best_score = score
             best_edge = (p1, p2)
     return best_edge
+
+# --------------------------------------------
+# 旗を探す
+# 2026/9/16 nguyen test_find_flag.pyからコピー
+# 2026/9/16 nguyen 画像表示無くす
+# --------------------------------------------
+def detect_triangle_by_color(frame, bbox, epsilon_ratio=0.03, area_min=200, margin_ratio=0.3):
+    """
+    bbox内を赤色でマスクし、三角形(旗)を検出する。
+    detect_triangle_in_bbox(rgbd_utils.py)はCannyエッジベースだが、
+    旗の下辺や先端が背景とのコントラスト不足でエッジが繋がらず検出に失敗するため、
+    赤色そのものを塗りつぶしマスクとして使う方式に切り替えた。
+
+    Args:
+        frame (np.ndarray): 元画像(BGR)
+        bbox (tuple): (x1, y1, x2, y2)
+        epsilon_ratio (float): 近似精度
+        area_min (float): 最小面積
+    Returns:
+        approx (np.ndarray | None): 三角形輪郭(N×1×2)。見つからなければNone
+    """
+    x1, y1, x2, y2 = expand_bbox(bbox, frame.shape, margin_ratio)
+
+    roi = frame[y1:y2, x1:x2]
+    if roi.size == 0:
+        return None
+
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, RED_HSV_LOWER_1, RED_HSV_UPPER_1) | \
+           cv2.inRange(hsv, RED_HSV_LOWER_2, RED_HSV_UPPER_2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    best = None
+    best_area = 0
+    # best_local = None
+    for cnt in contours:
+        arclen = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon_ratio * arclen, True)
+        area = cv2.contourArea(approx)
+        if len(approx) == 3 and area >= area_min and area > best_area:
+            best_local = approx.copy()
+            approx[:, 0, 0] += x1
+            approx[:, 0, 1] += y1
+            best = approx
+            best_area = area
+
+    # デバッグ用: 赤マスク画像に輪郭を描画して表示
+    # mask_debug = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+    # cv2.drawContours(mask_debug, contours, -1, (255, 0, 0), 1)  # 全輪郭(青)
+    # if best_local is not None:
+    #     cv2.polylines(mask_debug, [best_local], isClosed=True, color=(0, 255, 255), thickness=2)  # 採用した三角形(黄)
+    # cv2.namedWindow("red mask (debug)", cv2.WINDOW_NORMAL)
+    # cv2.resizeWindow("red mask (debug)", 480, 360)
+    # cv2.imshow("red mask (debug)", mask_debug)
+
+    return best
+
+# --------------------------------------------
+# bboxを大きくする
+# 2026/9/16 nguyen test_find_flag.pyからコピー
+# --------------------------------------------
+def expand_bbox(bbox, frame_shape, margin_ratio=0.3):
+    """bboxをmargin_ratio分だけ対角長さを基準に外側に広げ、画像範囲内にクリップする"""
+    x1, y1, x2, y2 = map(int, bbox)
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    dis = np.sqrt(dx**2+dy**2)
+    h, w = frame_shape[:2]
+    x1 = max(0, int(x1 - margin_ratio * dis))
+    x2 = min(w, int(x2 + margin_ratio * dis))
+    y1 = max(0, int(y1 - margin_ratio * dis))
+    y2 = min(h, int(y2 + margin_ratio * dis))
+    return x1, y1, x2, y2
