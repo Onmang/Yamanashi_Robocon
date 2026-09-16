@@ -66,6 +66,10 @@ RED_HSV_UPPER_1 = (10, 255, 255)
 RED_HSV_LOWER_2 = (170, 80, 50)
 RED_HSV_UPPER_2 = (180, 255, 255)
 
+from path_config import (
+    YOLO_MODEL
+)
+
 
 def expand_bbox_ver2(bbox, frame_shape, margin_ratio=0.3):
     """bboxをmargin_ratio分だけ外側に広げ、画像範囲内にクリップする"""
@@ -154,7 +158,7 @@ def main():
     # モデル読み込み
 
     # lab pc
-    YOLO_MODEL = "/home/konfi/Yamanashi_Robocon/nguyen/src/yolo_model/detect_5class_v8n/weights/best.onnx"
+    ##YOLO_MODEL = "yolo_model/detect_5class_v8n/weights/best.engine"
     print(f"[INFO] Starting to load YOLO model: {YOLO_MODEL}")
     s_time = time.time()
     model = YOLO(YOLO_MODEL, task='detect')
