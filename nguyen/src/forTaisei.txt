@@ -1,0 +1,120 @@
+# CAUTION
+MUST NOT UPDATE : Software Update, sudo apt update
+
+#0 Initial state when you open a new "Terminal"
+konfi@konfi-desktop:~$ 
+
+#1 ディレクトリへ移動
+'''bash
+cd ~/robocon_yamanashi/Yamanashi_Robocon/nguyen/src
+'''
+->resluts: (py38env) konfi@konfi-desktop:~/robocon_yamanashi/Yamanashi_Robocon/nguyen/src$  
+
+#2 ワークスペース専用のPython環境を起動
+'''bash
+source ~/robocon_yamanashi/py38env/bin/activate
+'''
+->resluts: (py38env) konfi@konfi-desktop:~/robocon_yamanashi/Yamanashi_Robocon/nguyen/src$  
+
+#3 List all items in the folder
+'''bash
+ls
+'''
+2026/9/26 Now
+->resluts: (py38env) konfi@konfi-desktop:~/robocon_yamanashi/Yamanashi_Robocon/nguyen/src$ ls
+ 2025
+ activate_realsense_camera.py
+ arduino
+ check_cuda.py
+ connect_arduino.py
+ detect_ball_test_jetson.py
+ detect_ball_test.py
+ distance_params.json
+ exp_engine.py
+ exp_engine.txt
+ flag_1.jpg
+ flag_2.jpg
+ flag_3.jpg
+ flag_4.jpg
+ flag_5.jpg
+ git_comand.txt
+ gpio_src
+ images
+ neko_img
+ path_config.py
+ __pycache__
+ README.md
+'red mask (debug)_screenshot_17.09.2026.png'
+ rgbd_utils.py
+ TensorRT_Python38_Jetson.md
+ test_20260704_move.py
+ test_20260808_move_hit.py
+ test_20260917_move.py
+ test_find_flag.py
+ test_receive_sirial.py
+ yolo_model
+'YOLOv8 + RealSense D405_screenshot_08.06.2026.png'
+'YOLOv8 + RealSense D405_screenshot_22.06.2026.png'
+'YOLOv8 + RealSense_screenshot_17.09.2026.png'
+
+#4 to use "Git" 
+please check "git_command.txt" to get more details
+check git 
+'''bash
+git status 
+'''
+
+add eddited information
+'''bash
+git add .
+'''
+
+git commit
+write comment inside the "", like "20260930 up file name taisei"
+'''bash
+git commit -m "20260926 up nguyen"
+'''
+
+check if git commit was successful or not
+'''bash
+git status 
+'''
+->resluts: 
+------------------------------------------
+On branch develop
+Your branch is ahead of 'origin/develop' by 1 commit.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+------------------------------------------
+
+#5 to Pull and Push to Github"
+Make sure that COMPLETE the "Git" commit BEFORE use "Github"
+
+Pull
+'''bash
+git pull 
+'''
+->resluts: 
+------------------------------------------
+Already up to date.
+------------------------------------------
+
+Push
+'''bash
+git push
+'''
+->resluts: 
+------------------------------------------
+Enumerating objects: 24, done.
+Counting objects: 100% (24/24), done.
+Delta compression using up to 4 threads
+Compressing objects: 100% (14/14), done.
+Writing objects: 100% (14/14), 8.28 MiB | 289.00 KiB/s, done.
+Total 14 (delta 8), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (8/8), completed with 7 local objects.
+To github.com:Onmang/Yamanashi_Robocon.git
+   075a32d..26e124b  develop -> develop
+------------------------------------------
+
+
