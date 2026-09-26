@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""test_20260808_move_hit.py
+"""test_20260704_move.py
 
-test for moving and hitting
+test for move 
 trace ball
 "recognition_ver3.py" base
 
@@ -23,10 +23,11 @@ Author:
     nguyen
 
 Date:
-    2026-08-05
+    2026-07-04
 
 History:
-    - 2026-08-05: nguyen 
+    - 2026-07-04: nguyen coped from 2025
+    - 2026-09-17: nguyen add a function to send Arduino operation instruction
 """
 import time
 import numpy as np
@@ -43,10 +44,7 @@ from rgbd_utils import (
     project_center_to_robot,
     compute_angles_from_position,
     encode_angle,
-    encode_distance_ver2,
-    find_vertical_edge,
-    detect_triangle_by_color,
-    expand_bbox
+    encode_distance_ver2
 )
 
 from path_config import (
@@ -67,22 +65,12 @@ flag_idx = 1
 pole_idx = 2
 bbox_color = (0, 255, 0) # green,  バウンディングボックス描画
 
-# しきい値関係
-AREA_MIN = 100  # 小ノイズ除去
-AREA_MIN_FLAG = 120  # flag用三角形最小面積
-
 # threshold
-dist_th_1 = 150  # mm, テスト用。100mmだとD435iの最小測距を割り込んでdepthが取れない
+dist_th_1 = 250  # mm
 angle_th_1 = 1  # deg
 
-# 打つときの閾値
-hit_angle_1 = 12  # deg
-hit_dis_1 = 2000  # mm
-hit_delay_time = 15.0  # sec 打つ動作の待機時間, arduino case2 の delay 合計(約13秒)より長く
-
-
 # arduino シリアル通信設定
-ARDUINO = True  # True: シリアル通信ON, False: シリアル通信OFF
+ARDUINO = False  # True: シリアル通信ON, False: シリアル通信OFF
 if ARDUINO:
     global ser
     serial_port = "/dev/ttyUSB0"  # arduino UNO, ttyACM0
@@ -99,39 +87,7 @@ if ARDUINO:
     ser.reset_output_buffer()
     print("[Debug] Serial Port was opened:", serial_port)
 
-
-def read_serial_lines(ser_, rx_buf):
-    """非ブロッキングで受信バイトを溜め、改行まで揃った行だけを返す。
-
-    ser は timeout=0 で開いているので readline() は改行を待たず
-    「その瞬間バッファにあるバイトだけ」を返してしまう。
-    115200baud では1バイト約87us間隔で届くため、ウェイト無しのループで
-    ポーリングすると "DO" と "NE" に割れて DONE を取りこぼす。
-    そこで bytearray に溜めてから改行単位で切り出す。
-
-    Args:
-        ser_ (serial.Serial): 開いているシリアルポート
-        rx_buf (bytearray): 呼び出し側で保持し続ける受信バッファ
-
-    Returns:
-        list[str]: 改行まで揃った行のリスト（空行は除く）
-    """
-    n = ser_.in_waiting
-    if n:
-        rx_buf.extend(ser_.read(n))
-
-    lines = []
-    while True:
-        idx = rx_buf.find(b"\n")
-        if idx < 0:
-            break
-        raw = bytes(rx_buf[:idx])
-        del rx_buf[: idx + 1]
-        line = raw.decode("utf-8", errors="ignore").strip()
-        if line:
-            lines.append(line)
-    return lines
-
+test_count = 0
 
 def main():
     """
@@ -212,8 +168,6 @@ def main():
         miss_count = 0  # 見失いカウンタ
         rasp_mode = DETECTION
         target_obj = BALL
-        rx_buf = bytearray()  # シリアル受信バッファ（行が揃うまで溜める）
-        last_sent_mode = None  # ログ抑制用：前回送ったmode
 
         # main loop
         while True:
@@ -223,8 +177,6 @@ def main():
             send_dist_mm = 0
             send_angle_deg = 0
             recog_res = False  # 検出結果初期化
-            do_send = True  # 遷移した周・DONE待ちの周は送信しない
-            finish = False  # 打撃を送ったらこのフラグで終了する
 
             # 場合分け
             # ----------
@@ -264,10 +216,10 @@ def main():
                 # best ball
                 best_ball_box = None
                 best_flag_box = None
-                # best_pole_box = None
+                best_pole_box = None
                 max_ball_conf = 0.0
                 max_flag_conf = 0.0
-                # max_pole_conf = 0.0
+                max_pole_conf = 0.0
 
                 # check the all boxes
                 for box in result.boxes:
@@ -281,17 +233,22 @@ def main():
                     elif cls_id_== flag_idx and conf_ > max_flag_conf:
                         max_flag_conf = conf_
                         best_flag_box = box
-                    # elif cls_id_ == pole_idx and conf_ > max_pole_conf:
-                    #     max_pole_conf = conf_
-                    #     best_pole_box = box
+                    elif cls_id_ == pole_idx and conf_ > max_pole_conf:
+                        max_pole_conf = conf_
+                        best_pole_box = box
                         
-                # 1 [Ball] check if None
+                # check if None
                 if target_obj == BALL and best_ball_box is not None:
+
                     # 座標・スコア・クラス取得
                     x1, y1, x2, y2 = map(int, best_ball_box.xyxy[0])
                     bst_conf = float(best_ball_box.conf[0])
                     bst_cls_id = int(best_ball_box.cls[0])
                     bst_cls_name = result.names[bst_cls_id]
+
+                    # 深度取得
+                    depth_mm = get_depth_at_bbox(depth_frame, x1, y1, x2, y2)
+                    depth_str = f"{depth_mm:.0f}mm" if depth_mm > 0 else "N/A"
 
                     # result
                     recog_res = True
@@ -315,12 +272,9 @@ def main():
                     ang_ = compute_angles_from_position(Xr, Yr)
                     angle_str = f"{ang_:+6.1f}deg"
 
+
                     # バウンディングボックス描画
                     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), bbox_color, 2)
-
-                    # 描画
-                    depth_mm = get_depth_at_bbox(depth_frame, x1, y1, x2, y2)
-                    depth_str = f"{depth_mm:.0f}mm" if depth_mm > 0 else "N/A"
 
                     # ラベル
                     label = f"{bst_cls_name} {bst_conf:.2f} | {depth_str:4}"
@@ -343,77 +297,6 @@ def main():
                         (0, 0, 0),
                         2,
                     )
-
-                # 2 [flag]
-                elif target_obj == FLAG and best_flag_box is not None:
-
-                    # 座標・スコア・クラス取得
-                    bst_conf = float(best_flag_box.conf[0])
-                    bst_cls_id = int(best_flag_box.cls[0])
-                    bst_cls_name = result.names[bst_cls_id]
-
-                    # 3角形をboxから見つける
-                    triangles = detect_triangle_by_color(color_image, best_flag_box.xyxy[0], epsilon_ratio=0.03, area_min=AREA_MIN_FLAG, margin_ratio=0.06)
-
-                    # バウンディングボックス描画
-                    x1, y1, x2, y2 = expand_bbox(best_flag_box.xyxy[0], color_image.shape,margin_ratio=0.06)
-                    cv2.rectangle(annotated_image, (x1, y1), (x2, y2), bbox_color, 5)
-
-                    if triangles is not None:
-                        cv2.polylines(annotated_image, [triangles], isClosed=True, color=(0, 255, 255), thickness=2)
-
-                        # 旗のポール座標を見つける
-                        edge = find_vertical_edge(triangles)
-                        if edge is not None:
-                            p1, p2 = edge
-                            mx = int((p1[0] + p2[0]) / 2)
-                            my = int((p1[1] + p2[1]) / 2)
-
-                            # result
-                            recog_res = True
-                            # --- 3D座標計算 ---
-                            depth_image = np.asanyarray(depth_frame.get_data())
-                            cam3d, rob3d = project_center_to_robot(
-                                u=mx,
-                                v=my,
-                                depth_image=depth_image,
-                                depth_scale=activate_cam.depth_scale,
-                                intr=activate_cam.intr,
-                                T_cam2rob=activate_cam.T_cam2rob,
-                                roi=7,
-                            )
-
-                            # angle deg
-                            if cam3d is None or rob3d is None:
-                                continue		
-                            Xr, Yr, _ = rob3d  # [m]
-
-                            # mx, myのdepth距離, 描画のため
-                            depth_mm = 1000.0 * depth_frame.get_distance(mx, my)  # メートル単位なので1000倍する
-                            depth_str = f"{depth_mm:.0f}mm" if depth_mm > 0 else "N/A"
-
-                            # 正面方向に近いほど小さい
-                            ang_ = compute_angles_from_position(Xr, Yr)
-                            angle_str = f"{ang_:+6.1f}deg"
-
-                            # label
-                            label = f"{bst_cls_name} {bst_conf:.2f} | {depth_str:4}"
-                            print(f"[Debug] Detected: {label} | {angle_str} | {fps_text}")
-                            label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-                            lx, ly = x1, max(y1 - 10, label_size[1])
-
-                            # 描画
-                            cv2.line(annotated_image, tuple(p1), tuple(p2), (0, 0, 255), 3)
-                            cv2.drawMarker(annotated_image, position=(mx,my), color=(0,255,0),markerType=cv2.MARKER_CROSS, markerSize=100, thickness=5, line_type=cv2.LINE_4)
-                            cv2.putText(
-                                annotated_image,
-                                label,
-                                (lx, ly),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.55,
-                                (0, 0, 0),
-                                2,
-                            )
 
                 # 検出成功
                 if recog_res:
@@ -451,71 +334,25 @@ def main():
                 
                 # カラー画像表示
                 cv2.imshow("YOLOv8 + RealSense", annotated_image)
+
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
 
-            # 場合分け
-            # ----------
-            # ARDUINO_MOVE :  Arduinoがボールの距離を微調整
-            # ----------    
-            elif rasp_mode == ARDUINO_MOVE:
-                # DONE待ちの間も画面とキー入力は回す（YOLO推論だけスキップ）
-                color_frame, depth_frame = get_rgbd_frames(activate_cam)
-                if color_frame:
-                    annotated_image = np.asanyarray(color_frame.get_data()).copy()
-                    cv2.putText(
-                        annotated_image, "ARDUINO_MOVE : waiting DONE", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2,
-                    )
-                    cv2.imshow("YOLOv8 + RealSense", annotated_image)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
-
-                # arduino調整終わったかどうかの確認。
-                # 行が揃ったものだけ見る（timeout=0 の readline() は途中で返るため）
-                if ARDUINO:
-                    for line in read_serial_lines(ser, rx_buf):
-                        print(f"[Arduino] {line}")
-                        if line == "DONE":
-                            print("[STATE] ARDUINO_MOVE -> DETECTION/FLAG  (DONE received)")
-                            rasp_mode = DETECTION
-                            target_obj = FLAG
-                            # ボールのトラッキング状態を旗に持ち越さない
-                            prev_angle = 0
-                            prev_dist = 0
-                            miss_count = MISS_LIMIT + 1
-                            # 遷移したこの周はまだ旗を見ていないので送信しない
-                            do_send = False
-                            break
-                else:
-                    # シリアル無しではDONEが来ないので待たずに次へ
-                    print("[STATE] ARDUINO=False: skip fine tuning -> DETECTION/FLAG")
-                    rasp_mode = DETECTION
-                    target_obj = FLAG
-                    prev_angle = 0
-                    prev_dist = 0
-                    miss_count = MISS_LIMIT + 1
-                    do_send = False
-
-            # ----------
             # move
-            # ----------
-            if rasp_mode == ARDUINO_MOVE:
-                """Arduinoのボール距離の微調整。mode 5 は遷移時に1回送るだけで再送しない"""
-                do_send = False
-            elif rasp_mode == DETECTION and target_obj == BALL:
-                """ボールに接近する"""
+            if rasp_mode == DETECTION:
                 if state == "TRACK":
                     if dist_mm < dist_th_1:
-                        mode = 5
+                        mode = 5  # arduino
                         send_dist_mm = 0
-                        send_angle_deg = 0
-                        rasp_mode = ARDUINO_MOVE
-                        print(f"[STATE] DETECTION/BALL -> ARDUINO_MOVE  (dist={dist_mm}mm)")
+                        send_angle_deg = 0   
+                        test_count =  test_count + 1
+                        if test_count == 20:
+                            rasp_mode = ARDUINO_MOVE
+                        
                     else:
                         mode = 1
                         send_dist_mm = dist_mm
-                        send_angle_deg = angle_deg
+                        send_angle_deg = angle_deg 
                         rasp_mode = DETECTION
                 elif state == "HOLD":
                         mode = 1
@@ -525,56 +362,29 @@ def main():
                         mode = 0
                         send_dist_mm = 0
                         send_angle_deg = 0
-            elif rasp_mode == DETECTION and target_obj == FLAG:
-                """ゴールに向く"""
-                if state == "TRACK":
-                    if abs(angle_deg) <= hit_angle_1:  # 角度閾値OK
-                        """ボール打つ。送ったら終了する"""
-                        mode = 2
-                        send_dist_mm = hit_dis_1
-                        send_angle_deg = 0
-                        finish = True
-                        print(f"[STATE] DETECTION/FLAG -> HIT  (angle={angle_deg}deg)")
-                    else:
-                        mode = 1
-                        send_dist_mm = 0
-                        send_angle_deg = angle_deg
-                elif state == "HOLD":
-                        mode = 1
-                        send_dist_mm = 0
-                        send_angle_deg = prev_angle
-                elif state == "LOST":
-                        mode = 0
-                        send_dist_mm = 0
-                        send_angle_deg = 0
+            elif rasp_mode == ARDUINO_MOVE:
+                mode = 5  # depend on arduino
+                send_dist_mm = 0
+                send_angle_deg = 0
+                print(f"[Debug] Arduino mode is {mode}...")
 
             # シリアル送信
-            if ARDUINO and do_send:
+            if ARDUINO:
                 angle_code = encode_angle(send_angle_deg)
                 dist_code = encode_distance_ver2(send_dist_mm)
                 msg = f"{mode}{angle_code}{dist_code}\n"
                 try:
                     ser.write(msg.encode("ascii"))
-                    # modeが変わったときだけログを出す（毎フレーム出すと埋まるため）
-                    if mode != last_sent_mode:
-                        print(f"[STATE] {rasp_mode}/{target_obj} {state} sent: {msg.strip()}")
-                        last_sent_mode = mode
+                    #print(f"[Debug] Sent {(state)}: {msg.strip()}")
+                    # if delay_after_hit:
+                    #     print("[Debug] Delay for hitting:", hit_delay_time)
+                    #     time.sleep(hit_delay_time)  # 打つ時間待機
+                    #     print("[Debug] Delay finished.")
+                    #     delay_after_hit = False
+
                 except Exception as e:
                     print("Failed to write to serial:", e)
                     pass
-
-            # 打撃を送ったら、Arduinoのシーケンスが終わるまで待ってから終了する。
-            # ここで待たずにポートを閉じるとDTRが落ちてUNOがスイング中にリセットされる。
-            if finish:
-                if ARDUINO:
-                    try:
-                        ser.flush()
-                    except Exception as e:
-                        print("Failed to flush serial:", e)
-                print(f"[STATE] HIT command sent. waiting {hit_delay_time} sec ...")
-                time.sleep(hit_delay_time)
-                print("[STATE] sequence finished.")
-                break
 
     except KeyboardInterrupt:
             print("\n===== Keyboard Interrupt =====")
