@@ -186,7 +186,7 @@ float dirSign = 1.0;
 float arcCx = 80.0;
 float arcCy = 0.0;
 
-float targetSensorV = 1.5;
+float targetSensorV = 3;
 
 // base command velocity
 float cmdVx = 0.0;
@@ -201,7 +201,7 @@ float autoAbsDistanceMm = 0.0;
 float ballRotTotalRad = 0.0;
 float ballRotDoneRad = 0.0;
 float ballRotDirSign = 1.0;
-float ballRotTargetSensorV = 0.8;
+float ballRotTargetSensorV = 2.5;
 
 // Numeric one-shot/restart guard
 int lastStartedNumericMode = -1;
