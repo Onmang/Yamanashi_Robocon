@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""test_20260704_move.py
+"""test_20260917_move.py
 
 test for move 
 trace ball
@@ -17,8 +17,6 @@ Example:
             runtime = start_time-end_time
             print(f"[time]{runtime}")
 
-
-
 Author:
     nguyen
 
@@ -28,6 +26,8 @@ Date:
 History:
     - 2026-07-04: nguyen coped from 2025
     - 2026-09-17: nguyen add a function to send Arduino operation instruction
+    - 2026-10-11: nguyen edited
+    - 2026-10-17: nguyen edited
 """
 import time
 import numpy as np
@@ -86,8 +86,6 @@ if ARDUINO:
     ser.reset_input_buffer()
     ser.reset_output_buffer()
     print("[Debug] Serial Port was opened:", serial_port)
-
-test_count = 0
 
 def main():
     """
@@ -168,6 +166,10 @@ def main():
         miss_count = 0  # 見失いカウンタ
         rasp_mode = DETECTION
         target_obj = BALL
+        test_count = 0  # Arduinoなしテスト用カウンタ
+        test_count2 = 0 # frame
+        ARDUINO_TEST_FRAMES = 20  # Arduino動作の代用フレーム数
+        ARDUINO_TEST_FRAMES2 = 50
 
         # main loop
         while True:
@@ -266,6 +268,7 @@ def main():
 
                     # angle deg
                     if cam3d is None or rob3d is None:
+                        miss_count += 1
                         continue		
                     Xr, Yr, _ = rob3d  # [m]
                     # 正面方向に近いほど小さい
@@ -345,8 +348,8 @@ def main():
                         mode = 5  # arduino
                         send_dist_mm = 0
                         send_angle_deg = 0   
-                        test_count =  test_count + 1
-                        if test_count == 20:
+                        test_count += 1
+                        if test_count > ARDUINO_TEST_FRAMES:
                             rasp_mode = ARDUINO_MOVE
                         
                     else:
@@ -363,9 +366,13 @@ def main():
                         send_dist_mm = 0
                         send_angle_deg = 0
             elif rasp_mode == ARDUINO_MOVE:
+                if test_count2 > ARDUINO_TEST_FRAMES2:
+                    print(f"[Debug] Arduino mode test has been PASSED.")
+                    return
                 mode = 5  # depend on arduino
                 send_dist_mm = 0
                 send_angle_deg = 0
+                test_count2 += 1
                 print(f"[Debug] Arduino mode is {mode}...")
 
             # シリアル送信
