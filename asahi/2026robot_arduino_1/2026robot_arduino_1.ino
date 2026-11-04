@@ -64,7 +64,7 @@ const int IR_L_PIN = A0;
 const int IR_R_PIN = A1;
 const int IR_NEAR_L_PIN = A3;
 const int IR_NEAR_R_PIN = A4;
-const int IR_MEDIAN_COUNT = 9;  // must be odd
+const int IR_MEDIAN_COUNT = 15;  // must be odd
 
 // =====================
 // Mode 2: camera STS3215 bus servo (adjust for your hardware!)
@@ -79,8 +79,8 @@ const unsigned long CAMERA_SERVO_BAUD = 1000000UL; // Match servo EEPROM baud
 // Check camera mounting, direction and safe mechanical range before running.
 const int CAMERA_ZERO_POS = 2048;       // Calibrate camera forward/horizontal angle
 const int CAMERA_DIRECTION = 1;        // +1 or -1: reverse if necessary
-const int CAMERA_MIN_ANGLE_DEG = -30;  // Temporary conservative limit: calibrate
-const int CAMERA_MAX_ANGLE_DEG =  30;  // Temporary conservative limit: calibrate
+const int CAMERA_MIN_ANGLE_DEG = -65;  // Temporary conservative limit: calibrate
+const int CAMERA_MAX_ANGLE_DEG =  90;  // Temporary conservative limit: calibrate
 const int CAMERA_SERVO_SPEED = 1000;
 const uint8_t CAMERA_SERVO_ACC = 200;
 const int CAMERA_POS_TOLERANCE = 18;    // Encoder counts (~1.6 deg)
@@ -162,9 +162,9 @@ const byte GRASS_FINE_PERIOD_TICKS = 2; // 2 x CONTROL_INTERVAL off
 const byte GRASS_ALIGN_STABLE_TICKS = 3; // sensor readings inside tolerance
 // =================================================
 
-const float M1_PWM_GAIN = 0.5;
+const float M1_PWM_GAIN = 0.6;
 const float M2_PWM_GAIN = 0.8;
-const float M3_PWM_GAIN = 0.5;
+const float M3_PWM_GAIN = 0.6;
 
 const float PWM_STEP_LIMIT = 1.0;  // reserved. Not used yet.
 const int DEADZONE_PWM = 40;
@@ -186,9 +186,9 @@ const float BALLROT_RADIUS_MM = 195.0;    // same virtual center offset as the o
 
 // motion speed for vision-style mode 1
 const float VISION_MOVE_FAST_MM_S = 180.0;
-const float VISION_MOVE_SLOW_MM_S = 60.0;
+const float VISION_MOVE_SLOW_MM_S = 120.0;
 const float VISION_ROT_FAST_RAD_S = 0.35;
-const float VISION_ROT_SLOW_RAD_S = 0.15;
+const float VISION_ROT_SLOW_RAD_S = 0.20;
 const float VISION_DIST_SLOW_BAND_MM = 350.0;
 const float VISION_ANGLE_SLOW_BAND_DEG = 8.0;
 
@@ -202,8 +202,8 @@ const float VISION_ANGLE_TOL_DEG = 3.0; // Mode 1: within 3 deg stops rotating
 // Measured best position with 9-point median filter:
 //   L ~ 502, R ~ 495, Avg ~ 499, Diff(L-R) ~ +7
 // Four-sensor experimental baselines (recheck after driver replacement).
-const float TARGET_120_MID_L = 468.0;
-const float TARGET_120_MID_R = 476.0;
+const float TARGET_120_MID_L = 474.0;
+const float TARGET_120_MID_R = 470.0;
 const float TARGET_160_MID_L = 374.0;
 const float TARGET_160_MID_R = 380.0;
 // 200 mm reference from stationary 4-sensor measurements (provisional).
