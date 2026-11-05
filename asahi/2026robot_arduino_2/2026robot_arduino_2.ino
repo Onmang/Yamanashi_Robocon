@@ -1490,8 +1490,10 @@ void controlLoop(unsigned long now) {
     if (aligned) {
       stopAll();
       if (mode == ALIGN4) {
-        mode = IDLE;
-        Serial.println(F("DONE"));
+        Serial.println(F("MODE5_ALIGN_DONE_CAMERA_RETURN"));
+        startCameraMove(0);  // カメラを水平位置へ戻す
+        //mode = IDLE;
+        //Serial.println(F("DONE"));
       } else if (mode == ORBIT_ALIGN_START) {
         if (!orbitGeometryConfirmed || orbitBallXmm <= 0.0f) {
           failFour("GEOMETRY_NOT_CONFIGURED");
