@@ -39,6 +39,9 @@
 // Mode 7 (ONE-SHOT): initial ALIGN 120, encoder-measured specified-angle
 // ball-centered orbit (continuous except final pulses), final ALIGN 120, DONE.
 // Mode 7 does NOT require repeated serial commands and has no Mode 6 watchdog.
+// If Mode 6 loses MID tracking 3 ticks in a row, stop and run internal
+// Mode 5 120mm ALIGN, then resume using the LATEST live serial angle.
+// Live heartbeat/zero-angle stop remain active throughout this recovery.
 // If Mode 7 loses MID tracking 3 ticks in a row, stop, do internal Mode 5
 // 120mm ALIGN (including bounded heading search), then resume remaining orbit.
 // Recoveries are limited; Mode 5 steering angle is excluded from orbit progress.
@@ -253,10 +256,10 @@ const float SEARCH_SPEED_MM_S = 35.0f;
 const unsigned long SEARCH_TIMEOUT_MS = 18000UL;
 const float SEARCH_MAX_ABS_Y_MM = 80.0f;
 const byte REACQUIRE_STABLE_READS = 3;
-// Mode 5 only: in-place rotation replaces side translation for alignment.
-// On prolonged sensor loss, perform a bounded rotational sweep. Mode 6 unchanged.
+// Mode 5 uses in-place rotation rather than side translation for alignment.
+// On prolonged sensor loss, perform a bounded rotational sweep.
 // v6.11 Mode 5 HYBRID: only large, sustained lateral errors cause in-place yaw.
-// Mode 6 is deliberately excluded from all of these corrections.
+// Mode 6 uses these settings only during internal Mode 5 recovery.
 const float MODE5_ROT_START_ERROR_RAW = 40.0f; // start turning after 3 confirmations
 const float MODE5_ROT_STOP_ERROR_RAW = 20.0f;  // stop turning after 3 confirmations
 const byte MODE5_ROT_CONFIRM_READS = 3;
@@ -286,7 +289,7 @@ const float MODE1_FINE_DIST_MM = 35.0f; // Mode 1 distance <=35 mm: fine pulse
 const bool ORBIT_SITE_GEOMETRY_MEASURED = true; // TRUE only after physical measurement & clearance check
 const float ORBIT_SITE_BALL_X_MM = 240.0f;         // measured forward offset (+X) [mm]
 const float ORBIT_SITE_BALL_Y_MM = 0.0f;         // measured left offset (+Y) [mm]
-const float ORBIT_OMEGA_RAD_S = 0.03f;           // continuous orbit speed; fine is PWM-timed
+const float ORBIT_OMEGA_RAD_S = 0.01f;           // continuous orbit speed; fine is PWM-timed
 // No fixed maximum requested angle; orbit safety timeout and sensor-loss stop remain.
 // ===== END SITE TUNING =====
 const float ORBIT_GEOM_MIN_X_MM = 60.0f;
@@ -317,6 +320,10 @@ const float MODE6_SENSOR_MAX_JUMP_RAW = 80.0f;
 const float MODE6_CORR_AVG_DEADBAND_RAW = 3.0f;
 const float MODE6_CORR_DIFF_DEADBAND_RAW = 4.0f;
 const byte MODE6_SENSOR_LOST_TICKS = 3;
+// Mode 6 ONLY: bounded Mode 5-style recovery when ball tracking is lost.
+// Other modes and IR sensor thresholds are unchanged.
+const byte MODE6_RECOVERY_MAX_ATTEMPTS = 50;
+const unsigned long MODE6_RECOVERY_TIMEOUT_MS = 40000UL;
 // ===== MODE 7 ONE-SHOT ANGLE ORBIT =====
 // Shares the SAME orbitBallXmm/orbitBallYmm and base ORBIT_OMEGA_RAD_S as Mode 6.
 // Encoder-estimated angle is used for completion; not an absolute gyro angle.
@@ -424,6 +431,7 @@ enum Mode {
   ALIGN4,
   ORBIT_ALIGN_START,
   ORBIT_RUN,
+  ORBIT6_RECOVER_ALIGN5,
   ORBIT_ALIGN120,
   ORBIT7_ALIGN_START,
   ORBIT7_RUN,
@@ -466,6 +474,10 @@ byte pulsePhase4 = 0;
 float orbitCommandAngleDeg = 0.0f; // latest signed serial angle request, NOT a target
 unsigned long orbitLastCommandMs = 0;
 bool orbitCommandTimedOut = false;
+byte orbit6RecoveryAttempts = 0;
+unsigned long orbit6RecoveryStartMs = 0;
+// After recovery failure, require an explicit STOP before any new Mode 6 run.
+bool orbit6FaultLatched = false;
 // Encoder heading is kept for telemetry and other modes only.
 // Mode 6 never uses this to determine completion or change drive speed.
 float totalTheta = 0.0f;
@@ -500,7 +512,7 @@ bool orbit7FineApproach = false;
 unsigned long orbit7LastTelemetryMs = 0;
 int lastStartedAngleDeg = 0;
 int lastStartedDistMm = 0;
-// Search state exists only within ALIGN / pre-orbit ALIGN.
+// Search state exists only within ALIGN and internal orbit ALIGN recovery.
 byte searchStep = 0;
 bool searchActive = false;
 byte reacquireCount = 0;
@@ -508,7 +520,7 @@ unsigned long searchStartMs = 0;
 unsigned long lastAlignedSensorMs = 0;
 bool motionFineOverride = false;
 bool alignCoarseDrive = false;
-// Mode 5 rotation-only reacquisition state; Mode 6 does not enter this scan.
+// Mode 5 rotation-only reacquisition state, shared with Mode 6/7 recovery.
 bool mode5HeadingScanActive = false;
 bool mode5HeadingScanAttempted = false;
 byte mode5HeadingScanStep = 0;
@@ -594,6 +606,7 @@ void failFour(const char* reason);
 void finishControlTick(long c1,long c2,long c3,unsigned long now);
 void startAlign4(float distance,bool fromOrbit);
 void startOrbit4(float angleDeg);
+void startOrbit6Recovery(const char *reason, unsigned long now);
 bool startOrbit7(float angleDeg);
 void startOrbit7Recovery(const char *reason, unsigned long now);
 bool isOrbit7Active();
@@ -730,7 +743,8 @@ void loop() {
 
   const unsigned long now = millis();
   // No automatic orbit completion. Stop safely if periodic commands cease.
-  if ((mode == ORBIT_RUN || mode == ORBIT_ALIGN_START) &&
+  if ((mode == ORBIT_RUN || mode == ORBIT_ALIGN_START ||
+       mode == ORBIT6_RECOVER_ALIGN5) &&
       !orbitCommandTimedOut &&
       (unsigned long)(now - orbitLastCommandMs) > MODE6_COMMAND_TIMEOUT_MS) {
     orbitCommandTimedOut = true;
@@ -890,6 +904,7 @@ void parseNumericCommand(String line) {
     case 0:
       stopAll();
       mode = IDLE;
+      orbit6FaultLatched = false;
       clearStartedNumericCommand();
       Serial.println(F("Mode 0: STOP"));
       break;
@@ -945,7 +960,7 @@ void parseNumericCommand(String line) {
       // CURRENT steering request, never an absolute target or remaining travel
       // computed on the Arduino. Even identical commands refresh the watchdog.
       if (mode == ORBIT_ALIGN_START || mode == ORBIT_RUN ||
-          angleSigned != 0) {
+          mode == ORBIT6_RECOVER_ALIGN5 || angleSigned != 0) {
         startOrbit4((float)angleSigned);
       }
       rememberStartedNumericCommand(modeVal, angleSigned, disSigned);
@@ -993,6 +1008,7 @@ void parseTextCommand(String line) {
   if (line == "STOP") {
     stopAll();
     mode = IDLE;
+    orbit6FaultLatched = false;
     clearStartedNumericCommand();
     Serial.println(F("STOP"));
     return;
@@ -1012,7 +1028,8 @@ void parseTextCommand(String line) {
   }
   if (line.startsWith("ORBITCFG ")) {
     // Geometry changes during an active Mode 6 would cause a sudden velocity jump.
-    if (mode == ORBIT_ALIGN_START || mode == ORBIT_RUN || mode == ORBIT_ALIGN120 ||
+    if (mode == ORBIT_ALIGN_START || mode == ORBIT_RUN ||
+        mode == ORBIT6_RECOVER_ALIGN5 || mode == ORBIT_ALIGN120 ||
         isOrbit7Active()) {
       Serial.println(F("ERROR:STOP_BEFORE_ORBITCFG")); return;
     }
@@ -1528,10 +1545,11 @@ void controlLoop(unsigned long now) {
     return;
   }
 
-  // A stopped command or missed heartbeat must also inhibit initial ALIGN.
+  // A stopped command or missed heartbeat must inhibit Mode 6 initial/recovery ALIGN.
   // Keep the Mode 6 state alive so the next update can resume it without
   // resetting the starting position or recalibrating other modes.
-  if ((mode == ORBIT_ALIGN_START || mode == ORBIT_RUN) &&
+  if ((mode == ORBIT_ALIGN_START || mode == ORBIT_RUN ||
+       mode == ORBIT6_RECOVER_ALIGN5) &&
       (orbitCommandTimedOut || orbitCommandAngleDeg == 0.0f)) {
     stopAll();
     finishControlTick(c1,c2,c3,now);
@@ -1546,11 +1564,19 @@ void controlLoop(unsigned long now) {
 
   motionFineOverride = false; alignCoarseDrive = false;
   if (mode == ALIGN4 || mode == ORBIT_ALIGN_START || mode == ORBIT_ALIGN120 ||
+      mode == ORBIT6_RECOVER_ALIGN5 ||
       mode == ORBIT7_ALIGN_START || mode == ORBIT7_RECOVER_ALIGN5 ||
       mode == ORBIT7_ALIGN120) {
     // Recovery executes Mode 5's SAME 120mm heading scan + center/forward/fine
     // alignment logic, but never sends Mode 5 DONE or starts the camera servo.
-    const bool mode5Like = (mode == ALIGN4 || mode == ORBIT7_RECOVER_ALIGN5);
+    const bool mode5Like = (mode == ALIGN4 ||
+                            mode == ORBIT6_RECOVER_ALIGN5 ||
+                            mode == ORBIT7_RECOVER_ALIGN5);
+    if (mode == ORBIT6_RECOVER_ALIGN5 &&
+        (unsigned long)(now - orbit6RecoveryStartMs) > MODE6_RECOVERY_TIMEOUT_MS) {
+      failFour("ORBIT6_RECOVERY_TIMEOUT");
+      finishControlTick(c1,c2,c3,now); return;
+    }
     if (mode == ORBIT7_RECOVER_ALIGN5 &&
         (unsigned long)(now - orbit7RecoveryStartMs) > MODE7_RECOVERY_TIMEOUT_MS) {
       failFour("ORBIT7_RECOVERY_TIMEOUT");
@@ -1560,7 +1586,7 @@ void controlLoop(unsigned long now) {
                                ? ORBIT_START_SENSOR_DISTANCE_MM :
                            (mode == ORBIT_ALIGN120 || mode == ORBIT7_ALIGN120) ? 120.0f :
                            align4Distance;
-    // Mode 5 and Mode 7 recovery get heading reacquisition. Mode 6 remains unchanged.
+    // Mode 5 and both orbit recovery states use the same heading reacquisition.
     if (mode5Like && distance == 120.0f && mode5HeadingScanActive) {
       runMode5HeadingScan(now,theta_est,rpm1,rpm2,rpm3,c1,c2,c3);
       return;
@@ -1615,9 +1641,9 @@ void controlLoop(unsigned long now) {
         }
       }
     }
-    // Mode 5 / Mode 7 recovery: distant + sustained large lateral error -> heading correction.
+    // Mode 5 / Mode 6+7 recovery: distant + sustained large lateral error -> heading correction.
     // Small fluctuations -> forward drive; within 45 RAW of target distance ->
-    // existing sensor-based fine lateral correction. Mode 6 logic stays untouched.
+    // existing sensor-based fine lateral correction.
     if (mode5Like && distance == 120.0f && !searchActive) {
       const float targetAvg120 = 0.5f * (TARGET_120_MID_L + TARGET_120_MID_R);
       const float errorAvg120 = targetAvg120 - mode5LastAvg;
@@ -1721,6 +1747,22 @@ void controlLoop(unsigned long now) {
         startCameraMove(-10);  // カメラを旗認識位置位置へ戻す
         //mode = IDLE;
         //Serial.println(F("DONE"));
+      } else if (mode == ORBIT6_RECOVER_ALIGN5) {
+        // Mode 6 has no accumulated target angle: simply resume the latest
+        // live serial command after the same Mode 5 120mm alignment succeeds.
+        mode = ORBIT_RUN;
+        orbitMidFilterReady = false;
+        orbitFineStage = ORBIT_FINE_IDLE;
+        orbitFineApproach = false;
+        lostTicks = 0;
+        fourStable = 0;
+        searchActive = false;
+        mode5HeadingScanActive = false;
+        mode5RotCorrectionActive = false;
+        Serial.print(F("ORBIT6_RECOVERY_OK attempt="));
+        Serial.print(orbit6RecoveryAttempts);
+        Serial.print(F(" live_angle_deg="));
+        Serial.println(orbitCommandAngleDeg, 1);
       } else if (mode == ORBIT7_RECOVER_ALIGN5) {
         // EXCLUDE heading change during Mode 5 recovery from orbit progress.
         // This keeps `targetRad - traveledRad` exactly as it was when paused.
@@ -1797,7 +1839,7 @@ void controlLoop(unsigned long now) {
     if (!orbitPairValid(fs)) {
       stopAll();
       orbitFineStage = ORBIT_FINE_IDLE;
-      if (++lostTicks >= MODE6_SENSOR_LOST_TICKS) failFour("ORBIT_SENSOR_LOST");
+      if (++lostTicks >= MODE6_SENSOR_LOST_TICKS) startOrbit6Recovery("SENSOR_LOST", now);
       else Serial.println(F("ORBIT6_WAIT_SENSOR"));
       finishControlTick(c1,c2,c3,now);
       return;
@@ -1810,7 +1852,7 @@ void controlLoop(unsigned long now) {
                fabsf(fs.midR-orbitMidRFiltered)>MODE6_SENSOR_MAX_JUMP_RAW) {
       stopAll();
       orbitFineStage = ORBIT_FINE_IDLE;
-      if (++lostTicks >= MODE6_SENSOR_LOST_TICKS) failFour("ORBIT_MID_SPIKE");
+      if (++lostTicks >= MODE6_SENSOR_LOST_TICKS) startOrbit6Recovery("MID_SPIKE", now);
       else Serial.println(F("ORBIT6_REJECT_SPIKE"));
       finishControlTick(c1,c2,c3,now);
       return;
@@ -2463,6 +2505,7 @@ void driveRobot(float Vx, float Vy, float omega, float rpm1, float rpm2, float r
   // Fine pulse drive is enabled by near-target motionFineOverride (X/Y/ROT/Mode 1,
   // Mode 6 FINAL only) or by the existing sensor-based ALIGN modes.
   bool fine = motionFineOverride || (mode == ALIGN_BALL || mode == BALL_ROT_ALIGN || ((mode == ALIGN4 || mode == ORBIT_ALIGN_START || mode == ORBIT_ALIGN120 ||
+          mode == ORBIT6_RECOVER_ALIGN5 ||
           mode == ORBIT7_ALIGN_START || mode == ORBIT7_RECOVER_ALIGN5 ||
           mode == ORBIT7_ALIGN120) && !alignCoarseDrive && !searchActive));
   if (fine) {
@@ -2694,6 +2737,9 @@ bool orbitPairValid(const FourSensors &f) {
 }
 
 void failFour(const char* reason) {
+  // A Mode 6 recovery failure must not be defeated by its periodic command
+  // stream automatically launching a new initial ALIGN after ERROR.
+  if (mode == ORBIT6_RECOVER_ALIGN5) orbit6FaultLatched = true;
   stopAll();
   mode = IDLE;
 
@@ -2724,12 +2770,14 @@ void startAlign4(float distance, bool fromOrbit) {
 }
 
 void startOrbit4(float angleDeg) {
+  if (orbit6FaultLatched) return;  // require Mode 0 / STOP to re-arm
   // MODE 6 LIVE commands are signed ANGULAR ERRORS sent continuously by the
   // vision computer. They are NOT a destination in encoder coordinates.
   if (!isfinite(angleDeg) || fabsf(angleDeg) > 999.0f) {
     Serial.println(F("ERROR:INVALID_ORBIT_ANGLE")); return;
   }
-  const bool orbitActive = (mode == ORBIT_ALIGN_START || mode == ORBIT_RUN);
+  const bool orbitActive = (mode == ORBIT_ALIGN_START || mode == ORBIT_RUN ||
+                            mode == ORBIT6_RECOVER_ALIGN5);
   if (orbitActive) {
     const float previousAngle = orbitCommandAngleDeg;
     const bool wasTimedOut = orbitCommandTimedOut;
@@ -2782,10 +2830,45 @@ void startOrbit4(float angleDeg) {
   orbitFineApproach = false;
   orbitMidFilterReady = false;
   orbitFinePulseCount = 0;
+  orbit6RecoveryAttempts = 0;
+  orbit6RecoveryStartMs = 0;
   phaseStartMs=millis(); fourStable=0; lostTicks=0; pulsePhase4=0;
   searchActive=false; searchStep=0; reacquireCount=0;
   mode5HeadingScanActive=false; mode5HeadingScanAttempted=false;
   Serial.println(F("MODE6_INITIAL_ALIGN_120_START"));
+}
+
+void startOrbit6Recovery(const char *reason, unsigned long now) {
+  // Called only after confirmed consecutive invalid/spiking MID readings.
+  // Maintain Mode 6's live angle and serial watchdog; do NOT send DONE.
+  stopAll();
+  orbitFineStage = ORBIT_FINE_IDLE;
+  orbitFineApproach = false;
+  if (orbit6RecoveryAttempts >= MODE6_RECOVERY_MAX_ATTEMPTS) {
+    failFour("ORBIT6_RECOVERY_LIMIT");
+    return;
+  }
+  ++orbit6RecoveryAttempts;
+  orbit6RecoveryStartMs = now;
+  Serial.print(F("ORBIT6_RECOVERY_BEGIN attempt="));
+  Serial.print(orbit6RecoveryAttempts);
+  Serial.print(F(" reason="));
+  Serial.println(reason);
+
+  // Run exactly Mode 5's existing 120mm alignment/heading search internally.
+  // startAlign4(120, false) would switch modes and produce standalone DONE,
+  // so use a separate internal state (same approach as Mode 7 recovery).
+  resetMotion();
+  mode = ORBIT6_RECOVER_ALIGN5;
+  align4Distance = 120.0f;
+  phaseStartMs = now;
+  fourStable = 0; lostTicks = 0; pulsePhase4 = 0;
+  searchActive = false; searchStep = 0; reacquireCount = 0;
+  mode5HeadingScanActive = false; mode5HeadingScanAttempted = false;
+  mode5RotCorrectionActive = false; mode5RotCorrectionLimited = false;
+  mode5RotStartCount = 0; mode5RotStopCount = 0;
+  mode5DiffFilterInitialized = false;
+  resetMode5Stability();
 }
 
 bool isOrbit7Active() {
@@ -2862,7 +2945,7 @@ bool startOrbit7(float angleDeg) {
   return true;
 }
 
-// Mode 5 and Mode 7's internal recovery: rotation-only reacquisition after consecutive LOST frames.
+// Mode 5 and Mode 6/7 internal recovery: rotation-only reacquisition after consecutive LOST frames.
 // No up-front scan is run when the current sensor pair is valid.
 void startMode5HeadingScan(unsigned long now) {
   stopAll(); resetMotion();
@@ -2962,7 +3045,7 @@ void runMode5HeadingScan(unsigned long now,float theta_est,float rpm1,float rpm2
 
 bool calculateAlign4(float distance,float &vx,float &vy,bool &valid) {
   FourSensors f=readFourSensors();
-  if (mode == ALIGN4 || mode == ORBIT7_RECOVER_ALIGN5) {
+  if (mode == ALIGN4 || mode == ORBIT6_RECOVER_ALIGN5 || mode == ORBIT7_RECOVER_ALIGN5) {
     const float raw[4]={f.midL,f.midR,f.nearL,f.nearR};
     printMode5Stability(raw);
   }
