@@ -126,7 +126,7 @@ const uint8_t HIT_SERVO_PIN = 26;
 const uint8_t HIT_SOLENOID_PIN = 27;  // MOSFET/driver input, NOT solenoid coil directly
 const int HIT_HOME_ANGLE = 0;
 const int HIT_READY_ANGLE = 120;
-const int HIT_MIN_ANGLE = 35;
+const int HIT_MIN_ANGLE = 50;
 const int HIT_MAX_ANGLE = 140;
 
 Servo hitServo;
@@ -1357,8 +1357,15 @@ void startHitMode3(float angleDeg, float distanceMm) {
   // signed distance [mm] clamped to 0..100, mapped to servo angle 35..140 deg.
   // NOTE: Jetson currently sends 0 mm (no FLAG) or 2000 mm (with FLAG),
   // which produces the endpoint angles 35 or 140 degrees respectively.
-  int boundedDistMm = constrain((int)lroundf(distanceMm), 0, 100);
-  hitTargetAngle = map(boundedDistMm, 0, 100, HIT_MIN_ANGLE, HIT_MAX_ANGLE);
+  //int boundedDistMm = constrain((int)lroundf(distanceMm), 0, 100);
+  //hitTargetAngle = map(boundedDistMm, 0, 100, HIT_MIN_ANGLE, HIT_MAX_ANGLE);
+
+  //========パッド修正後========
+  int boundedDistMm = constrain((int)lroundf(distanceMm), 300, 2000);
+  hitTargetAngle = round(0.0282 * boundedDistMm + 49.5);
+  hitTargetAngle = constrain(hitTargetAngle,HIT_MIN_ANGLE, HIT_MAX_ANGLE);
+  //==========================
+
 
   Serial.print(F("Mode 3 HIT requested. angle="));
   Serial.print(angleDeg);
