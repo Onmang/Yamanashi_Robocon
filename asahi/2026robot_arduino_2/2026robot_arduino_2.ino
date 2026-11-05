@@ -155,10 +155,10 @@ const float M3_GAIN = 1.00;
 
 // ===== GRASS TEST: tune these values first =====
 const float KP_RPM = 0.7;               // proportional rpm correction
-const int GRASS_START_PWM = 155;        // starting boost (test at low load first)
-const int GRASS_RUN_BASE_PWM = 112;     // running PWM before rpm correction
+const int GRASS_START_PWM = 160;        // starting boost (test at low load first)
+const int GRASS_RUN_BASE_PWM = 160;     // running PWM before rpm correction
 const float GRASS_RUN_PWM_PER_RPM = 2.0;
-const int GRASS_FINE_PWM = 155;         // pulsed PWM in ALIGN, not continuous
+const int GRASS_FINE_PWM = 160;         // pulsed PWM in ALIGN, not continuous
 const byte GRASS_FINE_ON_TICKS = 1;     // 1 x CONTROL_INTERVAL on
 const byte GRASS_FINE_PERIOD_TICKS = 2; // 2 x CONTROL_INTERVAL off
 const byte GRASS_ALIGN_STABLE_TICKS = 3; // sensor readings inside tolerance
@@ -263,9 +263,9 @@ const float MODE1_FINE_DIST_MM = 35.0f; // Mode 1 distance <=35 mm: fine pulse
 // The 120mm sensor-to-ball distance is NOT this geometric x offset.
 // Measure with ball at 120mm from the MID sensor reference face.
 const bool ORBIT_SITE_GEOMETRY_MEASURED = true; // TRUE only after physical measurement & clearance check
-const float ORBIT_SITE_BALL_X_MM = 260.0f;         // measured forward offset (+X) [mm]
+const float ORBIT_SITE_BALL_X_MM = 280.0f;         // measured forward offset (+X) [mm]
 const float ORBIT_SITE_BALL_Y_MM = 0.0f;         // measured left offset (+Y) [mm]
-const float ORBIT_OMEGA_RAD_S = 0.08f;           // initial slow orbit; tune after 45-degree test
+const float ORBIT_OMEGA_RAD_S = 0.06f;           // initial slow orbit; tune after 45-degree test
 // No fixed maximum requested angle; orbit safety timeout and sensor-loss stop remain.
 // ===== END SITE TUNING =====
 const float ORBIT_GEOM_MIN_X_MM = 60.0f;
