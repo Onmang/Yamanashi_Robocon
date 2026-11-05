@@ -179,10 +179,10 @@ const float M3_GAIN = 1.00;
 
 // ===== GRASS TEST: tune these values first =====
 const float KP_RPM = 0.7;               // proportional rpm correction
-const int GRASS_START_PWM = 120;        // starting boost (test at low load first)
-const int GRASS_RUN_BASE_PWM = 120;     // running PWM before rpm correction
+const int GRASS_START_PWM = 170;        // starting boost (test at low load first)
+const int GRASS_RUN_BASE_PWM = 170;     // running PWM before rpm correction
 const float GRASS_RUN_PWM_PER_RPM = 2.0;
-const int GRASS_FINE_PWM = 120;         // pulsed PWM in ALIGN, not continuous
+const int GRASS_FINE_PWM = 170;         // pulsed PWM in ALIGN, not continuous
 const byte GRASS_FINE_ON_TICKS = 1;     // 1 x CONTROL_INTERVAL on
 const byte GRASS_FINE_PERIOD_TICKS = 2; // 2 x CONTROL_INTERVAL off
 const byte GRASS_ALIGN_STABLE_TICKS = 3; // sensor readings inside tolerance
@@ -216,7 +216,7 @@ const float VISION_MOVE_SLOW_MM_S = 120.0;
 const float VISION_ROT_FAST_RAD_S = 0.35;
 const float VISION_ROT_SLOW_RAD_S = 0.20;
 const float VISION_DIST_SLOW_BAND_MM = 350.0;
-const float VISION_ANGLE_SLOW_BAND_DEG = 8.0;
+const float VISION_ANGLE_SLOW_BAND_DEG = 40.0;
 
 // stop tolerance
 const float MOVE_TOL_MM = 5.0;
