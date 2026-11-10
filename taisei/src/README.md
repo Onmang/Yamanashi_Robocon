@@ -1,0 +1,4 @@
+test_taisei_20261106_ver3_B：デバック用、バンカーコース
+test_taisei_20261106_ver3_L：デバック用、L字コース
+test_taisei_20261106_ver4_B：本番用、バンカーコース
+test_taisei_20261106_ver4_L：本番用、L字コース
